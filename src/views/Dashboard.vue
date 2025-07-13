@@ -1,148 +1,183 @@
 <template>
-  <div class="dashboard">
-    <el-container>
-      <el-header class="header">
-        <div class="header-left">
-          <h1>Neo4j 数据库管理系统</h1>
-        </div>
-        <div class="header-right">
-          <el-dropdown @command="handleCommand">
-            <span class="user-info">
-              <el-icon><User /></el-icon>
-              {{ currentUser?.username }}
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </el-header>
-      
-      <el-container>
-        <el-aside width="250px" class="sidebar">
-          <el-menu
-            :default-active="activeMenu"
-            class="sidebar-menu"
-            router
-            @select="handleMenuSelect"
-          >
-            <el-menu-item index="/dashboard">
-              <el-icon><House /></el-icon>
-              <span>首页</span>
-            </el-menu-item>
-            <el-menu-item index="/query">
-              <el-icon><Search /></el-icon>
-              <span>节点查询</span>
-            </el-menu-item>
-            <el-menu-item index="/graph">
-              <el-icon><Share /></el-icon>
-              <span>图形可视化</span>
-            </el-menu-item>
-            <el-menu-item index="/data">
-              <el-icon><DataLine /></el-icon>
-              <span>数据管理</span>
-            </el-menu-item>
-            <el-menu-item index="/config">
-              <el-icon><Setting /></el-icon>
-              <span>系统配置</span>
-            </el-menu-item>
-          </el-menu>
-        </el-aside>
-        
-        <el-main class="main-content">
-          <router-view v-if="$route.path !== '/dashboard'" />
-          <div v-else class="dashboard-content">
-            <el-row :gutter="20">
-              <el-col :span="8">
-                <el-card class="stat-card">
-                  <div class="stat-item">
-                    <el-icon class="stat-icon nodes"><DataLine /></el-icon>
-                    <div class="stat-info">
-                      <div class="stat-number">{{ stats.nodeCount }}</div>
-                      <div class="stat-label">节点总数</div>
-                    </div>
-                  </div>
-                </el-card>
-              </el-col>
-              <el-col :span="8">
-                <el-card class="stat-card">
-                  <div class="stat-item">
-                    <el-icon class="stat-icon relationships"><Share /></el-icon>
-                    <div class="stat-info">
-                      <div class="stat-number">{{ stats.relationshipCount }}</div>
-                      <div class="stat-label">关系总数</div>
-                    </div>
-                  </div>
-                </el-card>
-              </el-col>
-              <el-col :span="8">
-                <el-card class="stat-card">
-                  <div class="stat-item">
-                    <el-icon class="stat-icon labels"><Collection /></el-icon>
-                    <div class="stat-info">
-                      <div class="stat-number">{{ stats.labelCount }}</div>
-                      <div class="stat-label">标签类型</div>
-                    </div>
-                  </div>
-                </el-card>
-              </el-col>
-            </el-row>
-            
-            <el-row :gutter="20" style="margin-top: 20px;">
-              <el-col :span="12">
-                <el-card>
-                  <template #header>
-                    <div class="card-header">
-                      <span>快速操作</span>
-                    </div>
-                  </template>
-                  <div class="quick-actions">
-                    <el-button type="primary" @click="$router.push('/query')">
-                      <el-icon><Search /></el-icon>
-                      节点查询
-                    </el-button>
-                    <el-button type="success" @click="$router.push('/graph')">
-                      <el-icon><Share /></el-icon>
-                      图形可视化
-                    </el-button>
-                    <el-button type="info" @click="$router.push('/data')">
-                      <el-icon><DataLine /></el-icon>
-                      数据管理
-                    </el-button>
-                  </div>
-                </el-card>
-              </el-col>
-              <el-col :span="12">
-                <el-card>
-                  <template #header>
-                    <div class="card-header">
-                      <span>系统信息</span>
-                    </div>
-                  </template>
-                  <div class="system-info">
-                    <p><strong>数据库连接:</strong> {{ connectionStatus }}</p>
-                    <p><strong>登录用户:</strong> {{ currentUser?.username }}</p>
-                    <p><strong>登录时间:</strong> {{ formatTime(currentUser?.loginTime) }}</p>
-                    <div style="margin-top: 15px;">
-                      <el-button size="small" @click="testConnection" :loading="testing">
-                        测试连接
-                      </el-button>
-                      <el-button size="small" @click="reconnect" :loading="reconnecting">
-                        重新连接
-                      </el-button>
-                    </div>
-                  </div>
-                </el-card>
-              </el-col>
-            </el-row>
+  <AppLayout>
+    <div class="dashboard-container">
+          <!-- 欢迎横幅 -->
+          <div class="welcome-banner">
+            <div class="banner-content">
+              <div class="welcome-text">
+                <h2>欢迎回来，{{ currentUser?.username }}</h2>
+                <p>管理和探索您的Neo4j图数据库</p>
+              </div>
+              <div class="banner-actions">
+                <el-button type="primary" size="large" @click="$router.push('/query')">
+                  <el-icon><Search /></el-icon>
+                  开始查询
+                </el-button>
+              </div>
+            </div>
           </div>
-        </el-main>
-      </el-container>
-    </el-container>
-  </div>
+
+          <!-- 统计卡片 -->
+          <div class="stats-section">
+            <div class="stats-grid">
+              <div class="stat-card nodes">
+                <div class="stat-content">
+                  <div class="stat-icon-wrapper">
+                    <el-icon class="stat-icon"><DataLine /></el-icon>
+                  </div>
+                  <div class="stat-details">
+                    <div class="stat-number">{{ formatNumber(stats.nodeCount) }}</div>
+                    <div class="stat-label">节点总数</div>
+                    <div class="stat-trend">+12% 本月</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="stat-card relationships">
+                <div class="stat-content">
+                  <div class="stat-icon-wrapper">
+                    <el-icon class="stat-icon"><Share /></el-icon>
+                  </div>
+                  <div class="stat-details">
+                    <div class="stat-number">{{ formatNumber(stats.relationshipCount) }}</div>
+                    <div class="stat-label">关系总数</div>
+                    <div class="stat-trend">+8% 本月</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="stat-card labels">
+                <div class="stat-content">
+                  <div class="stat-icon-wrapper">
+                    <el-icon class="stat-icon"><Collection /></el-icon>
+                  </div>
+                  <div class="stat-details">
+                    <div class="stat-number">{{ formatNumber(stats.labelCount) }}</div>
+                    <div class="stat-label">标签类型</div>
+                    <div class="stat-trend">+2 新增</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="stat-card performance">
+                <div class="stat-content">
+                  <div class="stat-icon-wrapper">
+                    <el-icon class="stat-icon"><TrendCharts /></el-icon>
+                  </div>
+                  <div class="stat-details">
+                    <div class="stat-number">98.5%</div>
+                    <div class="stat-label">性能指标</div>
+                    <div class="stat-trend">+1.2% 优化</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 功能面板 -->
+          <div class="features-section">
+            <div class="section-header">
+              <h3>快速功能</h3>
+              <p>选择一个功能开始使用</p>
+            </div>
+            
+            <div class="features-grid">
+              <div class="feature-card" @click="$router.push('/query')">
+                <div class="feature-icon query">
+                  <el-icon><Search /></el-icon>
+                </div>
+                <div class="feature-content">
+                  <h4>节点查询</h4>
+                  <p>使用中文关键词快速查找节点信息</p>
+                  <div class="feature-stats">
+                    <span>支持模糊搜索</span>
+                  </div>
+                </div>
+                <div class="feature-arrow">
+                  <el-icon><ArrowRight /></el-icon>
+                </div>
+              </div>
+
+              <div class="feature-card" @click="$router.push('/graph')">
+                <div class="feature-icon visualization">
+                  <el-icon><Share /></el-icon>
+                </div>
+                <div class="feature-content">
+                  <h4>图形可视化</h4>
+                  <p>直观展示节点关系和图结构</p>
+                  <div class="feature-stats">
+                    <span>交互式图表</span>
+                  </div>
+                </div>
+                <div class="feature-arrow">
+                  <el-icon><ArrowRight /></el-icon>
+                </div>
+              </div>
+
+              <div class="feature-card" @click="$router.push('/data')">
+                <div class="feature-icon management">
+                  <el-icon><DataLine /></el-icon>
+                </div>
+                <div class="feature-content">
+                  <h4>数据管理</h4>
+                  <p>创建、编辑和删除节点与关系</p>
+                  <div class="feature-stats">
+                    <span>CRUD 操作</span>
+                  </div>
+                </div>
+                <div class="feature-arrow">
+                  <el-icon><ArrowRight /></el-icon>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 系统状态面板 -->
+          <div class="system-section">
+            <div class="section-header">
+              <h3>系统状态</h3>
+              <p>监控数据库连接和系统运行状态</p>
+            </div>
+            
+            <div class="system-grid">
+              <div class="system-card">
+                <div class="system-header">
+                  <h4>数据库连接</h4>
+                  <div class="connection-badge" :class="getStatusClass()">
+                    {{ connectionStatus }}
+                  </div>
+                </div>
+                <div class="system-content">
+                  <div class="connection-details">
+                    <div class="detail-item">
+                      <span class="label">服务器地址:</span>
+                      <span class="value">bolt://8.153.207.172:7687</span>
+                    </div>
+                    <div class="detail-item">
+                      <span class="label">用户名:</span>
+                      <span class="value">{{ currentUser?.username }}</span>
+                    </div>
+                    <div class="detail-item">
+                      <span class="label">连接时间:</span>
+                      <span class="value">{{ formatTime(currentUser?.loginTime) }}</span>
+                    </div>
+                  </div>
+                  <div class="action-buttons">
+                    <el-button size="small" @click="testConnection" :loading="testing" type="primary">
+                      <el-icon><Connection /></el-icon>
+                      测试连接
+                    </el-button>
+                    <el-button size="small" @click="reconnect" :loading="reconnecting">
+                      <el-icon><Refresh /></el-icon>
+                      重新连接
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+    </div>
+  </AppLayout>
 </template>
 
 <script setup>
@@ -157,10 +192,16 @@ import {
   Share,
   DataLine,
   Setting,
-  Collection
+  Collection,
+  SwitchButton,
+  TrendCharts,
+  ArrowRight,
+  Connection,
+  Refresh
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
 import neo4jService from '../services/neo4j'
+import AppLayout from '../components/AppLayout.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -175,30 +216,7 @@ const stats = reactive({
   labelCount: 0
 })
 
-const activeMenu = computed(() => route.path)
-
-const handleCommand = (command) => {
-  if (command === 'logout') {
-    ElMessageBox.confirm('确定要退出登录吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(() => {
-      authService.logout()
-      router.push('/login')
-      ElMessage.success('退出登录成功')
-    })
-  }
-}
-
-const handleMenuSelect = (index) => {
-  // 菜单选择处理
-}
-
-const formatTime = (timeStr) => {
-  if (!timeStr) return '-'
-  return new Date(timeStr).toLocaleString()
-}
+// 这些函数现在由 AppLayout 组件处理
 
 const loadStats = async () => {
   try {
@@ -289,125 +307,528 @@ const reconnect = async () => {
     reconnecting.value = false
   }
 }
+
+// 格式化数字显示
+const formatNumber = (num) => {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1) + 'M'
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1) + 'K'
+  }
+  return num.toString()
+}
+
+// 格式化时间显示
+const formatTime = (timeStr) => {
+  if (!timeStr) return '-'
+  return new Date(timeStr).toLocaleString()
+}
+
+// 获取连接状态样式类
+const getStatusClass = () => {
+  if (connectionStatus.value.includes('已连接') || connectionStatus.value.includes('连接正常')) {
+    return 'connected'
+  }
+  if (connectionStatus.value.includes('连接失败') || connectionStatus.value.includes('连接异常')) {
+    return 'disconnected'
+  }
+  return 'checking'
+}
 </script>
 
 <style scoped>
-.dashboard {
-  height: 100vh;
+/* 主容器 */
+.dashboard-container {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0;
 }
 
-.header {
-  background: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+/* Dashboard 内容样式 */
+
+/* 欢迎横幅 */
+.welcome-banner {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 24px;
+  padding: 40px;
+  color: white;
+  position: relative;
+  overflow: hidden;
+}
+
+.welcome-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 200px;
+  height: 200px;
+  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="3" fill="rgba(255,255,255,0.1)"/><circle cx="20" cy="20" r="2" fill="rgba(255,255,255,0.1)"/><circle cx="80" cy="30" r="1.5" fill="rgba(255,255,255,0.1)"/></svg>');
+  opacity: 0.3;
+}
+
+.banner-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 20px;
+  position: relative;
+  z-index: 2;
 }
 
-.header-left h1 {
-  color: #333;
-  font-size: 20px;
+.welcome-text h2 {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+}
+
+.welcome-text p {
+  font-size: 18px;
+  opacity: 0.9;
   margin: 0;
 }
 
-.header-right {
-  display: flex;
-  align-items: center;
+.banner-actions .el-button {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  font-weight: 600;
+  padding: 12px 24px;
+  border-radius: 12px;
+  transition: all 0.3s ease;
 }
 
-.user-info {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  color: #666;
+.banner-actions .el-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
 }
 
-.user-info:hover {
-  color: #409eff;
+/* 统计卡片 */
+.stats-section {
+  margin: 0;
 }
 
-.sidebar {
-  background: white;
-  box-shadow: 2px 0 4px rgba(0, 0, 0, 0.05);
-}
-
-.sidebar-menu {
-  border-right: none;
-  height: 100%;
-}
-
-.main-content {
-  background: #f5f5f5;
-  padding: 20px;
-}
-
-.dashboard-content {
-  max-width: 1200px;
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  justify-content: center;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
 .stat-card {
-  height: 120px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
 }
 
-.stat-item {
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, currentColor, transparent);
+  opacity: 0.6;
+}
+
+.stat-card.nodes::before {
+  color: #667eea;
+}
+
+.stat-card.relationships::before {
+  color: #52c41a;
+}
+
+.stat-card.labels::before {
+  color: #faad14;
+}
+
+.stat-card.performance::before {
+  color: #722ed1;
+}
+
+.stat-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+.stat-content {
   display: flex;
   align-items: center;
-  height: 100%;
+  gap: 20px;
+}
+
+.stat-icon-wrapper {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card.nodes .stat-icon-wrapper {
+  background: linear-gradient(135deg, #667eea20, #667eea10);
+  color: #667eea;
+}
+
+.stat-card.relationships .stat-icon-wrapper {
+  background: linear-gradient(135deg, #52c41a20, #52c41a10);
+  color: #52c41a;
+}
+
+.stat-card.labels .stat-icon-wrapper {
+  background: linear-gradient(135deg, #faad1420, #faad1410);
+  color: #faad14;
+}
+
+.stat-card.performance .stat-icon-wrapper {
+  background: linear-gradient(135deg, #722ed120, #722ed110);
+  color: #722ed1;
 }
 
 .stat-icon {
-  font-size: 36px;
-  margin-right: 15px;
+  font-size: 28px;
 }
 
-.stat-icon.nodes {
-  color: #409eff;
-}
-
-.stat-icon.relationships {
-  color: #67c23a;
-}
-
-.stat-icon.labels {
-  color: #e6a23c;
-}
-
-.stat-info {
+.stat-details {
   flex: 1;
 }
 
 .stat-number {
-  font-size: 28px;
-  font-weight: bold;
-  color: #333;
-  margin-bottom: 5px;
+  font-size: 36px;
+  font-weight: 800;
+  color: #2c3e50;
+  margin: 0 0 8px 0;
+  line-height: 1;
 }
 
 .stat-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #7f8c8d;
+  margin: 0 0 4px 0;
+}
+
+.stat-trend {
   font-size: 14px;
-  color: #666;
+  color: #52c41a;
+  font-weight: 500;
+  background: rgba(82, 196, 26, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-block;
 }
 
-.card-header {
+/* 功能面板 */
+.features-section {
+  margin: 0;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.section-header h3 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 8px 0;
+}
+
+.section-header p {
+  font-size: 16px;
+  color: #7f8c8d;
+  margin: 0;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  justify-content: center;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.feature-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
+  cursor: pointer;
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 20px;
+  position: relative;
+  overflow: hidden;
 }
 
-.quick-actions {
+.feature-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+.feature-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
   display: flex;
-  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: white;
+  flex-shrink: 0;
 }
 
-.quick-actions .el-button {
+.feature-icon.query {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.feature-icon.visualization {
+  background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+}
+
+.feature-icon.management {
+  background: linear-gradient(135deg, #faad14 0%, #d48806 100%);
+}
+
+.feature-content {
   flex: 1;
 }
 
-.system-info p {
-  margin: 10px 0;
+.feature-content h4 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 8px 0;
+}
+
+.feature-content p {
   font-size: 14px;
-  color: #666;
+  color: #7f8c8d;
+  margin: 0 0 8px 0;
+  line-height: 1.5;
+}
+
+.feature-stats span {
+  font-size: 12px;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.feature-arrow {
+  color: #7f8c8d;
+  font-size: 18px;
+  transition: all 0.3s ease;
+}
+
+.feature-card:hover .feature-arrow {
+  color: #667eea;
+  transform: translateX(4px);
+}
+
+/* 系统状态面板 */
+.system-section {
+  margin: 0;
+}
+
+.system-grid {
+  display: grid;
+  gap: 24px;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.system-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border-radius: 20px;
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
+.system-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.system-header h4 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0;
+}
+
+.connection-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.connection-badge.connected {
+  background: rgba(82, 196, 26, 0.1);
+  color: #52c41a;
+  border: 1px solid rgba(82, 196, 26, 0.2);
+}
+
+.connection-badge.disconnected {
+  background: rgba(255, 77, 79, 0.1);
+  color: #ff4d4f;
+  border: 1px solid rgba(255, 77, 79, 0.2);
+}
+
+.connection-badge.checking {
+  background: rgba(250, 173, 20, 0.1);
+  color: #faad14;
+  border: 1px solid rgba(250, 173, 20, 0.2);
+}
+
+.system-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.connection-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.detail-item:last-child {
+  border-bottom: none;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #7f8c8d;
+}
+
+.value {
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 500;
+  text-align: right;
+  max-width: 200px;
+  word-break: break-all;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.action-buttons .el-button {
+  flex: 1;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.action-buttons .el-button:hover {
+  transform: translateY(-2px);
+}
+
+/* 响应式设计 */
+@media (max-width: 1200px) {
+  .dashboard-container {
+    grid-template-columns: 240px 1fr;
+  }
+  
+  .main-content {
+    padding: 24px;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    grid-template-areas: 
+      "navbar"
+      "main";
+    grid-template-rows: 80px 1fr;
+    grid-template-columns: 1fr;
+  }
+  
+  .sidebar-nav {
+    display: none;
+  }
+  
+  .main-content {
+    padding: 16px;
+  }
+  
+  .welcome-banner {
+    padding: 24px;
+  }
+  
+  .banner-content {
+    flex-direction: column;
+    gap: 20px;
+    text-align: center;
+  }
+  
+  .welcome-text h2 {
+    font-size: 24px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Element Plus 样式覆盖 */
+.nav-menu .el-menu-item {
+  border-radius: 12px !important;
+  margin: 4px 16px !important;
+  color: #2c3e50 !important;
+}
+
+.nav-menu .el-menu-item.is-active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+  color: white !important;
+}
+
+.nav-menu .el-menu-item:hover {
+  background: rgba(102, 126, 234, 0.1) !important;
 }
 </style>

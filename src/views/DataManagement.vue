@@ -1,145 +1,383 @@
 <template>
-  <div class="data-management">
-    <el-card>
-      <template #header>
-        <div class="card-header">
-          <span>数据管理</span>
-          <el-button type="primary" @click="showCreateDialog">创建新节点</el-button>
+  <AppLayout :show-page-actions="true">
+    <template #page-actions>
+      <el-button 
+        type="primary" 
+        class="action-btn"
+        @click="showCreateDialog"
+      >
+        <el-icon><Plus /></el-icon>
+        创建新节点
+      </el-button>
+    </template>
+    
+    <div class="data-management">
+    <!-- 页面头部 -->
+    <div class="page-header">
+      <div class="header-content">
+        <div class="title-section">
+          <div class="page-icon">
+            <el-icon class="icon"><DataLine /></el-icon>
+          </div>
+          <div class="title-text">
+            <h1 class="page-title">数据管理</h1>
+            <p class="page-subtitle">管理和维护图数据库中的节点与关系数据</p>
+          </div>
         </div>
-      </template>
-      
-      <el-tabs v-model="activeTab" @tab-click="handleTabClick">
-        <el-tab-pane label="节点管理" name="nodes">
-          <div class="nodes-management">
-            <div class="filter-section">
-              <el-row :gutter="20">
-                <el-col :span="8">
-                  <el-select v-model="nodeFilter.label" placeholder="节点标签" clearable>
-                    <el-option
-                      v-for="label in labels"
-                      :key="label"
-                      :label="label"
-                      :value="label"
-                    />
-                  </el-select>
-                </el-col>
-                <el-col :span="8">
-                  <el-input v-model="nodeFilter.search" placeholder="搜索节点..." />
-                </el-col>
-                <el-col :span="8">
-                  <el-button @click="loadNodes">刷新</el-button>
-                </el-col>
-              </el-row>
-            </div>
-            
-            <el-table :data="nodes" stripe style="width: 100%; margin-top: 20px;">
-              <el-table-column prop="id" label="ID" width="100" />
-              <el-table-column prop="labels" label="标签" width="150">
-                <template #default="scope">
-                  <el-tag
-                    v-for="label in scope.row.labels"
-                    :key="label"
-                    size="small"
-                    style="margin-right: 5px;"
-                  >
-                    {{ label }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="属性预览" min-width="300">
-                <template #default="scope">
-                  <div class="property-preview">
-                    <span
-                      v-for="(value, key) in getPreviewProperties(scope.row.properties)"
-                      :key="key"
-                      class="property-item"
+        <div class="header-actions">
+          <el-button 
+            type="primary" 
+            class="action-btn"
+            @click="showCreateDialog"
+          >
+            <el-icon><Plus /></el-icon>
+            创建新节点
+          </el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+      <div class="content-card">
+        <el-tabs v-model="activeTab" @tab-click="handleTabClick" class="data-tabs">
+          <el-tab-pane label="节点管理" name="nodes">
+            <div class="nodes-management">
+              <!-- 节点筛选区域 -->
+              <div class="filter-section">
+                <div class="filter-header">
+                  <h3 class="filter-title">
+                    <el-icon><Filter /></el-icon>
+                    筛选条件
+                  </h3>
+                </div>
+                <div class="filter-controls">
+                  <div class="filter-group">
+                    <label class="filter-label">节点标签</label>
+                    <el-select 
+                      v-model="nodeFilter.label" 
+                      placeholder="选择标签（可选）" 
+                      clearable
+                      class="filter-select"
                     >
-                      <strong>{{ key }}:</strong> {{ formatProperty(value) }}
-                    </span>
+                      <el-option
+                        v-for="label in labels"
+                        :key="label"
+                        :label="label"
+                        :value="label"
+                      />
+                    </el-select>
                   </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="200">
-                <template #default="scope">
-                  <el-button size="small" @click="editNode(scope.row)">编辑</el-button>
-                  <el-button size="small" type="danger" @click="deleteNode(scope.row)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+                  <div class="filter-group">
+                    <label class="filter-label">搜索关键词</label>
+                    <el-input 
+                      v-model="nodeFilter.search" 
+                      placeholder="搜索节点属性..."
+                      class="filter-input"
+                      @keyup.enter="loadNodes"
+                    >
+                      <template #prepend>
+                        <el-icon><Search /></el-icon>
+                      </template>
+                    </el-input>
+                  </div>
+                  <div class="filter-actions">
+                    <el-button 
+                      type="info"
+                      class="filter-btn"
+                      @click="loadNodes"
+                      :loading="loading"
+                    >
+                      <el-icon><Refresh /></el-icon>
+                      {{ loading ? '加载中' : '刷新数据' }}
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 节点数据表格 -->
+              <div class="table-section">
+                <div class="table-header">
+                  <div class="table-title">
+                    <h3 class="section-title">
+                      <el-icon><Collection /></el-icon>
+                      节点列表
+                    </h3>
+                    <div class="table-stats">
+                      <span class="stat-count">{{ nodes.length }}</span>
+                      <span class="stat-text">个节点</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="table-wrapper">
+                  <el-table 
+                    :data="nodes" 
+                    class="modern-table"
+                    empty-text="暂无节点数据"
+                  >
+                    <el-table-column prop="id" label="节点 ID" width="120" class-name="id-column">
+                      <template #default="scope">
+                        <div class="id-badge">
+                          {{ scope.row.id }}
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column prop="labels" label="标签" width="200">
+                      <template #default="scope">
+                        <div class="labels-container">
+                          <el-tag
+                            v-for="label in scope.row.labels"
+                            :key="label"
+                            type="info"
+                            effect="light"
+                            class="label-tag"
+                          >
+                            {{ label }}
+                          </el-tag>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column label="主要属性" min-width="400">
+                      <template #default="scope">
+                        <div class="property-preview">
+                          <div
+                            v-for="(value, key) in getPreviewProperties(scope.row.properties)"
+                            :key="key"
+                            class="property-item"
+                          >
+                            <span class="prop-key">{{ key }}</span>
+                            <span class="prop-value">{{ formatProperty(value) }}</span>
+                          </div>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column label="操作" width="180" class-name="actions-column">
+                      <template #default="scope">
+                        <div class="table-actions">
+                          <el-button 
+                            type="primary" 
+                            size="small" 
+                            class="action-btn-sm"
+                            @click="editNode(scope.row)"
+                          >
+                            <el-icon><Edit /></el-icon>
+                            编辑
+                          </el-button>
+                          <el-button 
+                            type="danger" 
+                            size="small" 
+                            class="action-btn-sm"
+                            @click="deleteNode(scope.row)"
+                          >
+                            <el-icon><Delete /></el-icon>
+                            删除
+                          </el-button>
+                        </div>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </div>
           </div>
         </el-tab-pane>
         
-        <el-tab-pane label="关系管理" name="relationships">
-          <div class="relationships-management">
-            <div class="filter-section">
-              <el-row :gutter="20">
-                <el-col :span="8">
-                  <el-select v-model="relFilter.type" placeholder="关系类型" clearable>
-                    <el-option
-                      v-for="type in relationshipTypes"
-                      :key="type"
-                      :label="type"
-                      :value="type"
-                    />
-                  </el-select>
-                </el-col>
-                <el-col :span="8">
-                  <el-input v-model="relFilter.search" placeholder="搜索关系..." />
-                </el-col>
-                <el-col :span="8">
-                  <el-button @click="loadRelationships">刷新</el-button>
-                  <el-button type="primary" @click="showCreateRelDialog">创建关系</el-button>
-                </el-col>
-              </el-row>
-            </div>
-            
-            <el-table :data="relationships" stripe style="width: 100%; margin-top: 20px;">
-              <el-table-column prop="id" label="ID" width="100" />
-              <el-table-column prop="type" label="类型" width="150" />
-              <el-table-column label="起始节点" width="200">
-                <template #default="scope">
-                  <div>
-                    <el-tag size="small">{{ scope.row.startLabels[0] }}</el-tag>
-                    <div style="margin-top: 5px; font-size: 12px;">
-                      ID: {{ scope.row.startId }}
-                    </div>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="目标节点" width="200">
-                <template #default="scope">
-                  <div>
-                    <el-tag size="small">{{ scope.row.endLabels[0] }}</el-tag>
-                    <div style="margin-top: 5px; font-size: 12px;">
-                      ID: {{ scope.row.endId }}
-                    </div>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="属性" min-width="200">
-                <template #default="scope">
-                  <div class="property-preview">
-                    <span
-                      v-for="(value, key) in scope.row.properties"
-                      :key="key"
-                      class="property-item"
+          <el-tab-pane label="关系管理" name="relationships">
+            <div class="relationships-management">
+              <!-- 关系筛选区域 -->
+              <div class="filter-section">
+                <div class="filter-header">
+                  <h3 class="filter-title">
+                    <el-icon><Filter /></el-icon>
+                    筛选条件
+                  </h3>
+                </div>
+                <div class="filter-controls">
+                  <div class="filter-group">
+                    <label class="filter-label">关系类型</label>
+                    <el-select 
+                      v-model="relFilter.type" 
+                      placeholder="选择关系类型（可选）" 
+                      clearable
+                      class="filter-select"
                     >
-                      <strong>{{ key }}:</strong> {{ formatProperty(value) }}
-                    </span>
+                      <el-option
+                        v-for="type in relationshipTypes"
+                        :key="type"
+                        :label="type"
+                        :value="type"
+                      />
+                    </el-select>
                   </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150">
-                <template #default="scope">
-                  <el-button size="small" @click="editRelationship(scope.row)">编辑</el-button>
-                  <el-button size="small" type="danger" @click="deleteRelationship(scope.row)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+                  <div class="filter-group">
+                    <label class="filter-label">搜索关键词</label>
+                    <el-input 
+                      v-model="relFilter.search" 
+                      placeholder="搜索关系属性..."
+                      class="filter-input"
+                      @keyup.enter="loadRelationships"
+                    >
+                      <template #prepend>
+                        <el-icon><Search /></el-icon>
+                      </template>
+                    </el-input>
+                  </div>
+                  <div class="filter-actions">
+                    <el-button 
+                      type="info"
+                      class="filter-btn"
+                      @click="loadRelationships"
+                    >
+                      <el-icon><Refresh /></el-icon>
+                      刷新数据
+                    </el-button>
+                    <el-button 
+                      type="success"
+                      class="filter-btn"
+                      @click="showCreateRelDialog"
+                    >
+                      <el-icon><Connection /></el-icon>
+                      创建关系
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 关系数据表格 -->
+              <div class="table-section">
+                <div class="table-header">
+                  <div class="table-title">
+                    <h3 class="section-title">
+                      <el-icon><Connection /></el-icon>
+                      关系列表
+                    </h3>
+                    <div class="table-stats">
+                      <span class="stat-count">{{ relationships.length }}</span>
+                      <span class="stat-text">个关系</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="table-wrapper">
+                  <el-table 
+                    :data="relationships" 
+                    class="modern-table"
+                    empty-text="暂无关系数据"
+                  >
+                    <el-table-column prop="id" label="关系 ID" width="120" class-name="id-column">
+                      <template #default="scope">
+                        <div class="id-badge">
+                          {{ scope.row.id }}
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column prop="type" label="关系类型" width="180">
+                      <template #default="scope">
+                        <el-tag type="warning" effect="light" class="type-tag">
+                          {{ scope.row.type }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column label="起始节点" width="220">
+                      <template #default="scope">
+                        <div class="node-info">
+                          <div class="node-labels">
+                            <el-tag 
+                              v-for="label in scope.row.startLabels" 
+                              :key="label"
+                              type="info" 
+                              effect="light" 
+                              size="small"
+                              class="node-label"
+                            >
+                              {{ label }}
+                            </el-tag>
+                          </div>
+                          <div class="node-id">
+                            ID: {{ scope.row.startId }}
+                          </div>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column label="目标节点" width="220">
+                      <template #default="scope">
+                        <div class="node-info">
+                          <div class="node-labels">
+                            <el-tag 
+                              v-for="label in scope.row.endLabels" 
+                              :key="label"
+                              type="info" 
+                              effect="light" 
+                              size="small"
+                              class="node-label"
+                            >
+                              {{ label }}
+                            </el-tag>
+                          </div>
+                          <div class="node-id">
+                            ID: {{ scope.row.endId }}
+                          </div>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column label="属性" min-width="300">
+                      <template #default="scope">
+                        <div class="property-preview" v-if="Object.keys(scope.row.properties).length > 0">
+                          <div
+                            v-for="(value, key) in scope.row.properties"
+                            :key="key"
+                            class="property-item"
+                          >
+                            <span class="prop-key">{{ key }}</span>
+                            <span class="prop-value">{{ formatProperty(value) }}</span>
+                          </div>
+                        </div>
+                        <div v-else class="no-properties">
+                          <el-icon><InfoFilled /></el-icon>
+                          无属性
+                        </div>
+                      </template>
+                    </el-table-column>
+                    
+                    <el-table-column label="操作" width="180" class-name="actions-column">
+                      <template #default="scope">
+                        <div class="table-actions">
+                          <el-button 
+                            type="primary" 
+                            size="small" 
+                            class="action-btn-sm"
+                            @click="editRelationship(scope.row)"
+                          >
+                            <el-icon><Edit /></el-icon>
+                            编辑
+                          </el-button>
+                          <el-button 
+                            type="danger" 
+                            size="small" 
+                            class="action-btn-sm"
+                            @click="deleteRelationship(scope.row)"
+                          >
+                            <el-icon><Delete /></el-icon>
+                            删除
+                          </el-button>
+                        </div>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </div>
           </div>
         </el-tab-pane>
       </el-tabs>
-    </el-card>
+      </div>
+    </div>
     
     <!-- 创建/编辑节点对话框 -->
     <el-dialog
@@ -263,14 +501,29 @@
         <el-button type="primary" @click="saveRelationship">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+    </div>
+  </AppLayout>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { 
+  DataLine, 
+  Plus, 
+  Filter, 
+  Search, 
+  Refresh, 
+  Edit, 
+  Delete, 
+  Connection,
+  InfoFilled,
+  Warning,
+  Collection
+} from '@element-plus/icons-vue'
 import neo4jService from '../services/neo4j'
+import AppLayout from '../components/AppLayout.vue'
 
 const route = useRoute()
 
@@ -284,6 +537,8 @@ const nodeFilter = reactive({
   label: '',
   search: ''
 })
+
+const loading = ref(false)
 
 const relFilter = reactive({
   type: '',
@@ -332,6 +587,7 @@ const relRules = {
 }
 
 const loadNodes = async () => {
+  loading.value = true
   try {
     let query = 'MATCH (n)'
     const params = {}
@@ -360,6 +616,8 @@ const loadNodes = async () => {
   } catch (error) {
     console.error('加载节点失败:', error)
     ElMessage.error('加载节点失败')
+  } finally {
+    loading.value = false
   }
 }
 
@@ -627,54 +885,521 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* 主容器 */
 .data-management {
-  max-width: 1200px;
-  margin: 0 auto;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+  padding: 24px;
 }
 
-.card-header {
+/* 页面头部 */
+.page-header {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  padding: 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.filter-section {
-  padding: 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
+.title-section {
+  display: flex;
+  align-items: center;
+  gap: 20px;
 }
 
-.property-preview {
+.page-icon {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.page-icon .icon {
+  font-size: 28px;
+  color: white;
+}
+
+.page-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 8px 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.page-subtitle {
+  font-size: 16px;
+  color: #7f8c8d;
+  margin: 0;
+  font-weight: 400;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.action-btn {
+  height: 48px;
+  padding: 0 24px;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+/* 主内容区域 */
+.main-content {
+  margin-bottom: 24px;
+}
+
+.content-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  padding: 32px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+/* 标签页 */
+.data-tabs {
+  margin-top: 16px;
+}
+
+.data-tabs :deep(.el-tabs__header) {
+  margin-bottom: 24px;
+  background: rgba(248, 250, 252, 0.8);
+  border-radius: 12px;
+  padding: 8px;
+}
+
+.data-tabs :deep(.el-tabs__nav-wrap) {
+  padding: 0;
+}
+
+.data-tabs :deep(.el-tabs__item) {
+  padding: 16px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  color: #7f8c8d;
+  transition: all 0.3s ease;
+}
+
+.data-tabs :deep(.el-tabs__item.is-active) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.data-tabs :deep(.el-tabs__active-bar) {
+  display: none;
+}
+
+/* 筛选区域 */
+.filter-section {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border: 1px solid rgba(102, 126, 234, 0.1);
+  border-radius: 16px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+}
+
+.filter-header {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.filter-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.filter-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 20px;
+  align-items: end;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.filter-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+.filter-select,
+.filter-input {
+  width: 100%;
+}
+
+.filter-select :deep(.el-input__wrapper),
+.filter-input :deep(.el-input__wrapper) {
+  border-radius: 12px;
+  border: 2px solid #e8ecf0;
+  background: rgba(248, 250, 252, 0.8);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.filter-select :deep(.el-input__wrapper:hover),
+.filter-input :deep(.el-input__wrapper:hover) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.filter-select :deep(.el-input__wrapper.is-focus),
+.filter-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+.filter-input :deep(.el-input-group__prepend) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  color: white;
+  border-radius: 12px 0 0 12px;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.filter-btn {
+  height: 56px;
+  padding: 0 20px;
+  border-radius: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.filter-btn:hover {
+  transform: translateY(-2px);
+}
+
+/* 表格区域 */
+.table-section {
+  margin-top: 24px;
+}
+
+.table-header {
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid rgba(102, 126, 234, 0.1);
+}
+
+.table-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.stat-count {
+  font-size: 24px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.stat-text {
+  font-size: 14px;
+  color: #7f8c8d;
+  font-weight: 500;
+}
+
+.table-wrapper {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.modern-table {
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.modern-table :deep(.el-table__header) {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.modern-table :deep(.el-table__header th) {
+  background: transparent;
+  border: none;
+  color: #2c3e50;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 16px 12px;
+}
+
+.modern-table :deep(.el-table__body tr:hover > td) {
+  background-color: rgba(102, 126, 234, 0.05) !important;
+}
+
+.modern-table :deep(.el-table__body td) {
+  padding: 12px;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+/* ID 列 */
+.id-badge {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 60px;
+}
+
+/* 标签容器 */
+.labels-container {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 6px;
+}
+
+.label-tag {
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+/* 属性预览 */
+.property-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .property-item {
-  background: #e8f4f8;
-  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(102, 126, 234, 0.05);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border-left: 3px solid #667eea;
+}
+
+.prop-key {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 13px;
+  min-width: 80px;
+}
+
+.prop-value {
+  color: #7f8c8d;
+  font-size: 13px;
+  flex: 1;
+  word-break: break-all;
+}
+
+.no-properties {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #a0a7b0;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* 节点信息 */
+.node-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.node-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.node-label {
+  font-size: 11px;
+  font-weight: 500;
   border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.node-id {
   font-size: 12px;
+  color: #7f8c8d;
+  font-weight: 500;
 }
 
-.property-item strong {
-  color: #409eff;
+/* 类型标签 */
+.type-tag {
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 6px 12px;
 }
 
+/* 表格操作 */
+.table-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn-sm {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.action-btn-sm:hover {
+  transform: translateY(-1px);
+}
+
+/* 属性编辑器 */
 .properties-editor {
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 15px;
-  background: #f9f9f9;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
 
 .property-row {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  gap: 12px;
+  margin-bottom: 16px;
 }
 
 .property-row:last-child {
   margin-bottom: 0;
+}
+
+.property-row .el-input {
+  flex: 1;
+}
+
+.property-row .el-input :deep(.el-input__wrapper) {
+  border-radius: 8px;
+  border: 2px solid #e8ecf0;
+  background: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+}
+
+.property-row .el-input :deep(.el-input__wrapper:hover) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 1);
+}
+
+.property-row .el-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #667eea;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+  .filter-controls {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .filter-actions {
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .table-title {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+  }
+}
+
+@media (max-width: 768px) {
+  .data-management {
+    padding: 16px;
+  }
+  
+  .header-content {
+    flex-direction: column;
+    gap: 20px;
+    text-align: center;
+  }
+  
+  .title-section {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .page-title {
+    font-size: 24px;
+  }
+  
+  .property-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  
+  .table-actions {
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .filter-actions {
+    flex-direction: column;
+  }
 }
 </style>

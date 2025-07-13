@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import NodeQuery from '../views/NodeQuery.vue'
-import GraphVisualization from '../views/GraphVisualization.vue'
+import RelationshipQuery from '../views/RelationshipQuery.vue'
 import DataManagement from '../views/DataManagement.vue'
 import SystemConfig from '../views/SystemConfig.vue'
 
@@ -29,9 +29,9 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
-    path: '/graph',
-    name: 'GraphVisualization',
-    component: GraphVisualization,
+    path: '/relationships',
+    name: 'RelationshipQuery',
+    component: RelationshipQuery,
     meta: { requiresAuth: true }
   },
   {
