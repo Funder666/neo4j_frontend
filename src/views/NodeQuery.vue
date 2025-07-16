@@ -48,45 +48,45 @@
         </div>
         
         <div class="search-form">
-          <!-- 主搜索框 -->
-          <div class="main-search">
+          <div class="input-group">
             <div class="search-input-wrapper">
               <el-input
-                v-model="queryText"
-                placeholder="输入汉字或关键词查询相关节点..."
-                size="large"
+                v-model="searchQuery"
+                placeholder="输入关键词搜索节点..."
                 class="search-input"
-                @keyup.enter="searchNodes"
+                size="large"
+                :loading="loading"
+                @keyup.enter="performSearch"
               >
-                <template #prepend>
+                <template #prefix>
                   <el-icon class="search-icon"><Search /></el-icon>
-                </template>
-                <template #append>
-                  <el-button 
-                    type="primary" 
-                    :loading="loading"
-                    @click="searchNodes"
-                    class="search-btn"
-                  >
-                    {{ loading ? '搜索中' : '搜索' }}
-                  </el-button>
                 </template>
               </el-input>
             </div>
+            <el-button 
+              type="primary" 
+              class="search-btn"
+              @click="performSearch"
+              :loading="loading"
+              size="large"
+            >
+              <el-icon><Search /></el-icon>
+              搜索
+            </el-button>
           </div>
           
-          <!-- 高级选项 -->
-          <div class="advanced-options">
+          <div class="search-options">
             <div class="option-group">
-              <label class="option-label">节点标签</label>
-              <el-select
-                v-model="selectedLabel"
-                placeholder="选择节点标签（可选）"
+              <label class="option-label">节点标签：</label>
+              <el-select 
+                v-model="selectedLabel" 
+                placeholder="选择标签过滤"
                 clearable
                 class="option-select"
               >
+                <el-option label="全部标签" value="" />
                 <el-option
-                  v-for="label in labels"
+                  v-for="label in availableLabels"
                   :key="label"
                   :label="label"
                   :value="label"
@@ -95,7 +95,7 @@
             </div>
             
             <div class="option-group">
-              <label class="option-label">结果数量</label>
+              <label class="option-label">结果数量：</label>
               <el-input-number
                 v-model="limit"
                 :min="1"
@@ -126,12 +126,13 @@
           </div>
           <div class="results-actions">
             <el-button 
-              type="primary" 
-              class="view-btn"
-              @click="toggleView"
+              v-if="isAdmin"
+              type="success" 
+              class="action-btn"
+              @click="showCreateNodeDialog"
             >
-              <el-icon><Share /></el-icon>
-              {{ viewMode === 'table' ? '图形视图' : '表格视图' }}
+              <el-icon><Plus /></el-icon>
+              创建节点
             </el-button>
             <el-button 
               type="info" 
@@ -145,7 +146,7 @@
         </div>
         
         <!-- 图形可视化视图 -->
-        <div v-if="viewMode === 'graph'" class="graph-view">
+        <div class="graph-view">
           <div ref="networkContainer" class="network-container"></div>
           
           <!-- 选中节点信息面板 -->
@@ -202,125 +203,28 @@
                   </div>
                 </div>
               </div>
+              
+              <!-- 管理员操作按钮 -->
+              <div v-if="isAdmin" class="panel-actions">
+                <el-button 
+                  type="primary" 
+                  class="action-btn"
+                  @click="editNode(selectedNode)"
+                >
+                  <el-icon><Edit /></el-icon>
+                  编辑节点
+                </el-button>
+                <el-button 
+                  type="danger" 
+                  class="action-btn"
+                  @click="deleteNode(selectedNode)"
+                >
+                  <el-icon><Delete /></el-icon>
+                  删除节点
+                </el-button>
+              </div>
             </div>
           </div>
-        </div>
-        
-        <!-- 表格视图 -->
-        <div v-else class="results-content">
-          <el-table :data="results" class="results-table">
-            <el-table-column type="expand">
-              <template #default="props">
-                <div class="node-details">
-                  <div class="details-header">
-                    <h4 class="details-title">
-                      <el-icon><InfoFilled /></el-icon>
-                      节点详细属性
-                    </h4>
-                    <div class="node-id-badge">
-                      ID: {{ props.row.id }}
-                    </div>
-                  </div>
-                  
-                  <div class="properties-grid">
-                    <div 
-                      v-for="(value, key) in props.row.properties"
-                      :key="key"
-                      class="property-card"
-                    >
-                      <div class="property-key">{{ key }}</div>
-                      <div class="property-value">
-                        <a v-if="isUrl(formatProperty(value))" 
-                           :href="formatProperty(value)" 
-                           target="_blank" 
-                           class="property-link">
-                          {{ formatProperty(value) }}
-                        </a>
-                        <span v-else class="property-text">{{ formatProperty(value) }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div class="details-actions">
-                    <el-button 
-                      type="primary" 
-                      class="detail-btn"
-                      @click="viewRelationships(props.row)"
-                    >
-                      <el-icon><Share /></el-icon>
-                      查看关系
-                    </el-button>
-                  </div>
-                </div>
-              </template>
-            </el-table-column>
-            
-            <el-table-column prop="id" label="节点ID" width="100" class-name="id-column" />
-            
-            <el-table-column prop="labels" label="标签" width="180">
-              <template #default="scope">
-                <div class="labels-container">
-                  <el-tag
-                    v-for="label in scope.row.labels"
-                    :key="label"
-                    type="info"
-                    effect="light"
-                    class="label-tag"
-                  >
-                    {{ label }}
-                  </el-tag>
-                </div>
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="主要属性" min-width="500">
-              <template #default="scope">
-                <div class="property-preview">
-                  <div
-                    v-for="(value, key) in getMainProperties(scope.row.properties)"
-                    :key="key"
-                    class="property-item"
-                  >
-                    <span class="prop-key">{{ key }}</span>
-                    <span class="prop-value">
-                      <a v-if="isUrl(formatProperty(value))" 
-                         :href="formatProperty(value)" 
-                         target="_blank" 
-                         class="property-link-small">
-                        {{ formatProperty(value) }}
-                      </a>
-                      <span v-else>{{ formatProperty(value) }}</span>
-                    </span>
-                  </div>
-                </div>
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="操作" width="240" class-name="actions-column">
-              <template #default="scope">
-                <div class="table-actions">
-                  <el-button 
-                    type="primary" 
-                    size="small" 
-                    class="action-btn-sm"
-                    @click="editNode(scope.row)"
-                  >
-                    <el-icon><Edit /></el-icon>
-                    编辑
-                  </el-button>
-                  <el-button 
-                    type="danger" 
-                    size="small" 
-                    class="action-btn-sm"
-                    @click="deleteNode(scope.row)"
-                  >
-                    <el-icon><Delete /></el-icon>
-                    删除
-                  </el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
         </div>
       </div>
     </div>
@@ -344,98 +248,85 @@
         </el-empty>
       </div>
     </div>
-    
-    <!-- 节点关系对话框 -->
+
+    <!-- 创建/编辑节点对话框 -->
     <el-dialog
-      v-model="relationshipDialog"
-      width="85%"
-      class="relationship-dialog"
-      :before-close="handleClose"
+      v-model="nodeDialog.visible"
+      :title="nodeDialog.mode === 'create' ? '创建节点' : '编辑节点'"
+      width="600px"
+      class="node-dialog"
     >
-      <template #header>
-        <div class="dialog-header">
-          <div class="dialog-title">
-            <el-icon class="dialog-icon"><Share /></el-icon>
-            <span>节点关系图谱</span>
-          </div>
-          <div class="dialog-subtitle" v-if="currentNode">
-            节点 ID: {{ currentNode.id }} 的所有关系连接
-          </div>
-        </div>
-      </template>
-      
-      <div class="relationship-content">
-        <div v-if="relationships.length > 0" class="relationships-table-wrapper">
-          <el-table :data="relationships" class="relationships-table">
-            <el-table-column prop="type" label="关系类型" width="180">
-              <template #default="scope">
-                <div class="relation-type">
-                  <el-tag type="warning" effect="light" class="type-tag">
-                    {{ scope.row.type }}
-                  </el-tag>
-                </div>
-              </template>
-            </el-table-column>
-            
-            <el-table-column prop="direction" label="方向" width="80" align="center">
-              <template #default="scope">
-                <div class="direction-indicator">
-                  <span class="direction-arrow">{{ scope.row.direction }}</span>
-                </div>
-              </template>
-            </el-table-column>
-            
-            <el-table-column label="目标节点" min-width="400">
-              <template #default="scope">
-                <div class="target-node">
-                  <div class="target-labels">
-                    <el-tag
-                      v-for="label in scope.row.targetLabels"
-                      :key="label"
-                      type="info"
-                      effect="light"
-                      class="target-label"
-                    >
-                      {{ label }}
-                    </el-tag>
-                  </div>
-                  <div class="target-properties">
-                    <div
-                      v-for="(value, key) in getMainProperties(scope.row.targetProperties)"
-                      :key="key"
-                      class="target-property"
-                    >
-                      <span class="prop-key">{{ key }}</span>
-                      <span class="prop-value">{{ formatProperty(value) }}</span>
-                    </div>
-                  </div>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
+      <el-form
+        ref="nodeForm"
+        :model="nodeDialog.form"
+        :rules="nodeDialog.rules"
+        label-width="100px"
+      >
+        <el-form-item label="节点标签" prop="labels">
+          <el-select
+            v-model="nodeDialog.form.labels"
+            multiple
+            filterable
+            allow-create
+            placeholder="选择或输入标签"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="label in availableLabels"
+              :key="label"
+              :label="label"
+              :value="label"
+            />
+          </el-select>
+        </el-form-item>
         
-        <div v-else class="no-relationships">
-          <el-empty description="该节点没有关系连接">
-            <template #image>
-              <div class="empty-relationship-icon">
-                <el-icon><Connection /></el-icon>
-              </div>
-            </template>
-            <template #description>
-              <p class="empty-rel-title">暂无关系数据</p>
-              <p class="empty-rel-subtitle">该节点尚未与其他节点建立关系连接</p>
-            </template>
-          </el-empty>
-        </div>
-      </div>
+        <el-form-item label="节点属性">
+          <div class="properties-editor">
+            <div 
+              v-for="(prop, index) in nodeDialog.form.properties" 
+              :key="index"
+              class="property-input-row"
+            >
+              <el-input
+                v-model="prop.key"
+                placeholder="属性名"
+                style="width: 40%"
+              />
+              <el-input
+                v-model="prop.value"
+                placeholder="属性值"
+                style="width: 40%"
+              />
+              <el-button
+                type="danger"
+                @click="removeProperty(index)"
+                :disabled="nodeDialog.form.properties.length <= 1"
+              >
+                删除
+              </el-button>
+            </div>
+            <el-button type="primary" @click="addProperty">
+              添加属性
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="nodeDialog.visible = false">取消</el-button>
+          <el-button type="primary" @click="saveNode" :loading="nodeDialog.loading">
+            {{ nodeDialog.mode === 'create' ? '创建' : '保存' }}
+          </el-button>
+        </span>
+      </template>
     </el-dialog>
     </div>
   </AppLayout>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
@@ -444,209 +335,175 @@ import {
   Collection, 
   Download, 
   InfoFilled, 
-  Share, 
-  TrendCharts, 
-  Edit, 
-  Delete,
-  Connection,
+  Close,
   HomeFilled,
-  Close
+  Plus,
+  Edit,
+  Delete
 } from '@element-plus/icons-vue'
-import neo4jService from '../services/neo4j'
+import apiService from '../services/api'
+import authService from '../services/auth'
 import AppLayout from '../components/AppLayout.vue'
 import { Network } from 'vis-network'
 
 const router = useRouter()
 
-const queryText = ref('')
-const selectedLabel = ref('')
-const limit = ref(50)
+// 响应式数据
 const loading = ref(false)
 const searched = ref(false)
+const searchQuery = ref('')
+const selectedLabel = ref('')
+const limit = ref(50)
 const results = ref([])
-const labels = ref([])
-const relationshipDialog = ref(false)
-const relationships = ref([])
-const currentNode = ref(null)
-const viewMode = ref('graph') // 'table' 或 'graph' - 默认使用图形视图
 const selectedNode = ref(null)
+const availableLabels = ref([])
 const networkContainer = ref(null)
 const network = ref(null)
 
-const searchNodes = async () => {
-  if (!queryText.value.trim()) {
-    ElMessage.warning('请输入查询内容')
+// 权限控制
+const currentUser = computed(() => authService.getCurrentUser())
+const isAdmin = computed(() => currentUser.value?.role === 'admin')
+
+// 节点编辑对话框
+const nodeDialog = reactive({
+  visible: false,
+  mode: 'create', // 'create' | 'edit'
+  loading: false,
+  form: {
+    labels: [],
+    properties: [{ key: 'name', value: '' }]
+  },
+  rules: {
+    labels: [
+      { required: true, message: '请选择至少一个标签', trigger: 'change' }
+    ]
+  }
+})
+
+const nodeForm = ref(null)
+
+// 方法
+const goHome = () => {
+  router.push('/dashboard')
+}
+
+const clearResults = () => {
+  results.value = []
+  searched.value = false
+  searchQuery.value = ''
+  selectedNode.value = null
+  if (network.value) {
+    network.value.destroy()
+    network.value = null
+  }
+}
+
+const performSearch = async () => {
+  if (!searchQuery.value.trim()) {
+    ElMessage.warning('请输入搜索关键词')
     return
   }
-  
+
   loading.value = true
   searched.value = true
-  
+
   try {
-    // 构建更精确的中文搜索查询
-    let matchClause = 'MATCH (n)'
-    let whereConditions = []
+    const response = await apiService.searchNodes(
+      searchQuery.value.trim(),
+      selectedLabel.value || null,
+      limit.value
+    )
     
-    // 如果指定了标签，在MATCH中直接指定
-    if (selectedLabel.value) {
-      matchClause = `MATCH (n:${selectedLabel.value})`
-    }
-    
-    // 只支持精确匹配搜索
-    const searchConditions = [
-      // 搜索常见属性的精确匹配
-      `(n.name IS NOT NULL AND n.name = $text)`,
-      `(n.title IS NOT NULL AND n.title = $text)`,
-      `(n.label IS NOT NULL AND n.label = $text)`,
-      // 搜索所有属性的精确匹配
-      `ANY(key IN keys(n) WHERE toString(n[key]) = $text)`
-    ]
-    
-    whereConditions.push(`(${searchConditions.join(' OR ')})`)
-    
-    let query = `
-      ${matchClause}
-      WHERE ${whereConditions.join(' AND ')}
-      RETURN n, labels(n) as labels, id(n) as id
-      ORDER BY 
-        CASE 
-          WHEN n.name IS NOT NULL AND n.name = $text THEN 1
-          WHEN n.title IS NOT NULL AND n.title = $text THEN 2
-          WHEN n.label IS NOT NULL AND n.label = $text THEN 3
-          ELSE 4
-        END
-      LIMIT $limit
-    `
-    
-    const limitValue = Math.floor(Number(limit.value))
-    
-    const params = {
-      text: queryText.value,
-      limit: neo4jService.neo4j.int(limitValue)
-    }
-    
-    const result = await neo4jService.runQuery(query, params)
-    
-    results.value = result.map(record => ({
-      id: record.get('id').toNumber(),
-      labels: record.get('labels'),
-      properties: record.get('n').properties
-    }))
+    results.value = response.nodes || []
     
     if (results.value.length === 0) {
-      ElMessage.info('未找到相关节点')
+      ElMessage.info('未找到匹配的节点')
     } else {
       ElMessage.success(`找到 ${results.value.length} 个节点`)
-      // 如果当前是图形视图模式，延迟创建网络图
-      if (viewMode.value === 'graph') {
-        nextTick(() => {
-          createNetwork()
-        })
-      }
+      // 创建图形可视化
+      setTimeout(() => {
+        createNetwork()
+      }, 100)
     }
   } catch (error) {
-    console.error('查询失败:', error)
-    ElMessage.error('查询失败，请稍后重试')
+    console.error('搜索失败:', error)
+    ElMessage.error('搜索失败: ' + error.message)
   } finally {
     loading.value = false
   }
 }
 
-const clearResults = () => {
-  results.value = []
-  queryText.value = ''
-  searched.value = false
-}
-
-const loadLabels = async () => {
-  try {
-    const result = await neo4jService.getAllLabels()
-    labels.value = result.map(record => record.get(0))
-  } catch (error) {
-    console.error('加载标签失败:', error)
-  }
-}
-
-const getMainProperties = (properties) => {
-  const mainProps = {}
-  let count = 0
-  
-  for (const [key, value] of Object.entries(properties)) {
-    if (count < 3) {
-      mainProps[key] = value
-      count++
-    }
-  }
-  
-  return mainProps
-}
-
-const formatProperty = (value) => {
-  if (value === null || value === undefined) return '-'
-  return String(value)
-}
-
-// 判断是否为URL
-const isUrl = (str) => {
-  try {
-    return str && (str.startsWith('http://') || str.startsWith('https://') || str.startsWith('ftp://'))
-  } catch {
-    return false
-  }
-}
-
-// 切换视图模式
-const toggleView = () => {
-  viewMode.value = viewMode.value === 'table' ? 'graph' : 'table'
-  if (viewMode.value === 'graph') {
-    // 延迟创建网络图，确保 DOM 元素已渲染
-    nextTick(() => {
-      createNetwork()
-    })
-  }
-}
-
-// 创建网络图
 const createNetwork = () => {
   if (!networkContainer.value || !results.value.length) return
-  
+
   // 清理旧的网络
   if (network.value) {
     network.value.destroy()
   }
-  
-  // 准备节点数据
-  const nodes = results.value.map(node => ({
-    id: node.id,
-    label: node.properties.name || node.properties.title || `Node ${node.id}`,
-    group: node.labels[0] || 'Unknown',
-    title: `ID: ${node.id}\n标签: ${node.labels.join(', ')}`,
-    color: getNodeColor(node.labels[0]),
-    font: { color: '#2c3e50', size: 14 },
-    shape: 'dot',
-    size: 20,
-    data: node // 存储完整的节点数据
-  }))
-  
-  // 边数据（暂时为空，只显示节点）
-  const edges = []
-  
-  // 网络配置
+
+  // 调试：打印数据结构
+  console.log('Results data structure:', results.value[0])
+
+  const nodes = results.value.map(record => {
+    // 从record中提取实际的节点数据
+    const node = record.n || record;
+    return {
+      id: node.id,
+      label: (node.properties && node.properties.name) || (node.properties && node.properties.value ? node.properties.value.trim() : '') || `${node.id}`,
+      group: (node.labels && node.labels[0]) || 'Unknown',
+      title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
+      color: {
+        background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
+        border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
+      },
+      font: { 
+        color: '#2c3e50', 
+        size: 20, 
+        face: 'Arial, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      shape: 'circle',
+      size: 50,
+      data: node // 存储实际的节点数据
+    }
+  })
+
+  const data = {
+    nodes: nodes,
+    edges: [] // 节点查询不显示边
+  }
+
   const options = {
     nodes: {
-      borderWidth: 2,
-      shadow: true,
+      borderWidth: 3,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.2)',
+        size: 10,
+        x: 2,
+        y: 2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 20,
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff',
+        bold: true
+      },
       chosen: {
         node: (values, id, selected, hovering) => {
           values.shadow = true
-          values.shadowSize = 10
+          values.shadowSize = 15
+          values.borderWidth = 4
         }
       }
     },
-    edges: {
-      arrows: { to: { enabled: true, scaleFactor: 1, type: 'arrow' } },
-      color: { color: '#848484', hover: '#667eea' },
-      smooth: { type: 'continuous' }
+    interaction: {
+      hover: true,
+      selectConnectedEdges: false,
+      tooltipDelay: 300
     },
     physics: {
       enabled: true,
@@ -654,142 +511,214 @@ const createNetwork = () => {
       barnesHut: {
         gravitationalConstant: -2000,
         centralGravity: 0.3,
-        springLength: 95,
+        springLength: 120,
         springConstant: 0.04,
         damping: 0.09
       }
-    },
-    interaction: {
-      hover: true,
-      tooltipDelay: 200,
-      hideEdgesOnDrag: false
-    },
-    layout: {
-      improvedLayout: false
     }
   }
-  
-  // 创建网络图
-  const data = { nodes, edges }
+
   network.value = new Network(networkContainer.value, data, options)
-  
-  // 添加点击事件
-  network.value.on('click', (params) => {
+
+  // 监听节点选择事件
+  network.value.on('selectNode', (params) => {
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0]
-      const nodeData = nodes.find(n => n.id === nodeId)
-      if (nodeData) {
-        selectedNode.value = nodeData.data
+      const record = results.value.find(record => {
+        const node = record.n || record;
+        return node.id === nodeId
+      })
+      if (record) {
+        selectedNode.value = record.n || record
       }
-    } else {
-      selectedNode.value = null
     }
+  })
+
+  // 监听空白区域点击
+  network.value.on('deselectNode', () => {
+    selectedNode.value = null
   })
 }
 
-// 根据标签获取节点颜色
 const getNodeColor = (label) => {
   const colors = {
     'Character': '#FF6B6B',
-    'Person': '#4ECDC4', 
-    'Location': '#45B7D1',
-    'Organization': '#96CEB4',
-    'Event': '#FECA57',
-    'Concept': '#FF9FF3',
-    'Default': '#667eea'
+    'Word': '#4ECDC4', 
+    'Sentence': '#45B7D1',
+    'ExternalLink': '#96CEB4',
+    'default': '#667eea'
   }
-  return colors[label] || colors.Default
+  return colors[label] || colors.default
 }
 
-const viewRelationships = async (node) => {
-  currentNode.value = node
-  relationshipDialog.value = true
-  
-  try {
-    const result = await neo4jService.getNodeRelationships(node.id)
-    
-    relationships.value = result.map(record => {
-      const startNode = record.get('n')
-      const endNode = record.get('m')
-      const relation = record.get('r')
-      
-      const isOutgoing = startNode.identity.toNumber() === node.id
-      const targetNode = isOutgoing ? endNode : startNode
-      
-      return {
-        type: record.get('relType'),
-        direction: isOutgoing ? '→' : '←',
-        targetLabels: targetNode.labels,
-        targetProperties: targetNode.properties
-      }
-    })
-  } catch (error) {
-    console.error('加载关系失败:', error)
-    ElMessage.error('加载关系失败')
-  }
+const darkenColor = (color, factor) => {
+  return color // 简化实现
 }
 
+const exportResults = () => {
+  const dataStr = JSON.stringify(results.value, null, 2)
+  const dataBlob = new Blob([dataStr], { type: 'application/json' })
+  const url = URL.createObjectURL(dataBlob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `node_search_results_${Date.now()}.json`
+  link.click()
+  URL.revokeObjectURL(url)
+}
+
+// CRUD操作
+const showCreateNodeDialog = () => {
+  nodeDialog.mode = 'create'
+  nodeDialog.form = {
+    labels: [],
+    properties: [{ key: 'name', value: '' }]
+  }
+  nodeDialog.visible = true
+}
 
 const editNode = (node) => {
-  router.push({
-    path: '/data',
-    query: { action: 'edit', nodeId: node.id }
-  })
+  nodeDialog.mode = 'edit'
+  nodeDialog.currentNodeId = node.id
+  nodeDialog.form = {
+    labels: [...node.labels],
+    properties: Object.entries(node.properties).map(([key, value]) => ({ key, value }))
+  }
+  nodeDialog.visible = true
 }
 
 const deleteNode = async (node) => {
   try {
-    await ElMessageBox.confirm('确定要删除这个节点吗？', '确认删除', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    
-    await neo4jService.deleteNode(node.id)
+    await ElMessageBox.confirm(
+      `确定要删除节点 ${node.id} 吗？这个操作不可撤销。`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    await apiService.deleteNode(node.id)
     ElMessage.success('节点删除成功')
     
-    // 从结果中移除已删除的节点
-    results.value = results.value.filter(n => n.id !== node.id)
+    // 从结果中移除被删除的节点
+    results.value = results.value.filter(record => {
+      const n = record.n || record
+      return n.id !== node.id
+    })
+    selectedNode.value = null
+    
+    // 重新创建网络图
+    if (results.value.length > 0) {
+      createNetwork()
+    } else {
+      // 如果没有节点了，清空网络图
+      if (network.value) {
+        network.value.destroy()
+        network.value = null
+      }
+    }
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('删除失败:', error)
-      ElMessage.error('删除失败')
+      console.error('删除节点失败:', error)
+      ElMessage.error('删除节点失败: ' + error.message)
     }
   }
 }
 
-const exportResults = () => {
-  const data = JSON.stringify(results.value, null, 2)
-  const blob = new Blob([data], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `nodes_${new Date().toISOString().split('T')[0]}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+const addProperty = () => {
+  nodeDialog.form.properties.push({ key: '', value: '' })
 }
 
-const handleClose = () => {
-  relationshipDialog.value = false
-  relationships.value = []
-  currentNode.value = null
+const removeProperty = (index) => {
+  nodeDialog.form.properties.splice(index, 1)
 }
 
-const goHome = () => {
-  router.push('/dashboard')
-}
-
-onMounted(async () => {
-  // 确保Neo4j连接
+const saveNode = async () => {
   try {
-    const connected = await neo4jService.isConnected()
-    if (!connected) {
-      await neo4jService.connect()
+    await nodeForm.value.validate()
+    
+    nodeDialog.loading = true
+    
+    const properties = {}
+    nodeDialog.form.properties.forEach(prop => {
+      if (prop.key && prop.value) {
+        properties[prop.key] = prop.value
+      }
+    })
+
+    if (nodeDialog.mode === 'create') {
+      await apiService.createNode(nodeDialog.form.labels, properties)
+      ElMessage.success('节点创建成功')
+    } else {
+      await apiService.updateNode(nodeDialog.currentNodeId, properties)
+      ElMessage.success('节点更新成功')
+      
+      // 更新本地数据
+      const record = results.value.find(record => {
+        const node = record.n || record
+        return node.id === nodeDialog.currentNodeId
+      })
+      if (record) {
+        const node = record.n || record
+        node.properties = properties
+        node.labels = nodeDialog.form.labels
+        
+        // 立即重新创建网络图以显示更新
+        createNetwork()
+        
+        // 如果当前选中的是被编辑的节点，更新选中状态
+        if (selectedNode.value && selectedNode.value.id === nodeDialog.currentNodeId) {
+          selectedNode.value = node
+        }
+      }
     }
-    loadLabels()
+    
+    nodeDialog.visible = false
+    
+    // 如果是创建模式，重新搜索以显示新节点
+    if (nodeDialog.mode === 'create' && searchQuery.value) {
+      await performSearch()
+    } else if (nodeDialog.mode === 'edit') {
+      createNetwork() // 重新创建网络图
+    }
   } catch (error) {
-    console.error('初始化连接失败:', error)
+    console.error('保存节点失败:', error)
+    ElMessage.error('保存节点失败: ' + error.message)
+  } finally {
+    nodeDialog.loading = false
   }
+}
+
+
+const formatProperty = (value) => {
+  if (typeof value === 'object') {
+    return JSON.stringify(value)
+  }
+  return String(value)
+}
+
+const isUrl = (str) => {
+  try {
+    new URL(str)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// 加载可用标签
+const loadAvailableLabels = async () => {
+  try {
+    const response = await apiService.getAllLabels()
+    availableLabels.value = response.labels || []
+  } catch (error) {
+    console.error('加载标签失败:', error)
+  }
+}
+
+onMounted(() => {
+  loadAvailableLabels()
 })
 </script>
 
@@ -924,29 +853,20 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-.main-search {
+.input-group {
   margin-bottom: 24px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .search-input-wrapper {
+  flex: 1;
   position: relative;
 }
 
-.search-input :deep(.el-input-group__prepend) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
-  color: white;
-  border-radius: 12px 0 0 12px;
-}
-
-.search-input :deep(.el-input-group__append) {
-  padding: 0;
-  border: none;
-  border-radius: 0 12px 12px 0;
-}
-
 .search-input :deep(.el-input__wrapper) {
-  border-radius: 0;
+  border-radius: 12px;
   border: 2px solid #e8ecf0;
   background: rgba(248, 250, 252, 0.8);
   backdrop-filter: blur(10px);
@@ -966,15 +886,21 @@ onMounted(async () => {
 }
 
 .search-btn {
-  height: 56px;
+  height: 48px;
   padding: 0 24px;
-  border-radius: 0 12px 12px 0;
+  border-radius: 12px;
   font-weight: 600;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
+  transition: all 0.3s ease;
 }
 
-.advanced-options {
+.search-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.search-options {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
@@ -1070,6 +996,11 @@ onMounted(async () => {
   font-weight: 500;
 }
 
+.results-actions {
+  display: flex;
+  gap: 12px;
+}
+
 .export-btn {
   height: 40px;
   padding: 0 20px;
@@ -1081,86 +1012,6 @@ onMounted(async () => {
 .export-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 12px rgba(144, 147, 153, 0.3);
-}
-
-/* 表格样式 */
-.results-table {
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-}
-
-.results-table :deep(.el-table__header) {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-}
-
-.results-table :deep(.el-table__header th) {
-  background: transparent;
-  border: none;
-  color: #2c3e50;
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.results-table :deep(.el-table__body tr:hover > td) {
-  background-color: rgba(102, 126, 234, 0.05) !important;
-}
-
-.labels-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.label-tag {
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-  padding: 4px 8px;
-}
-
-.property-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.property-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(102, 126, 234, 0.05);
-  padding: 8px 12px;
-  border-radius: 8px;
-  border-left: 3px solid #667eea;
-}
-
-.prop-key {
-  font-weight: 600;
-  color: #2c3e50;
-  font-size: 13px;
-  min-width: 80px;
-}
-
-.prop-value {
-  color: #7f8c8d;
-  font-size: 13px;
-  flex: 1;
-  word-break: break-all;
-  max-width: 100%;
-  overflow-wrap: break-word;
-}
-
-.property-link-small {
-  color: #667eea;
-  text-decoration: none;
-  transition: color 0.3s ease;
-  word-break: break-all;
-}
-
-.property-link-small:hover {
-  color: #764ba2;
-  text-decoration: underline;
 }
 
 /* 图形视图样式 */
@@ -1310,146 +1161,26 @@ onMounted(async () => {
   text-decoration: underline;
 }
 
-.view-btn {
-  margin-right: 12px;
-}
-
-.table-actions {
+/* 管理员操作按钮 */
+.panel-actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.action-btn-sm {
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.action-btn-sm:hover {
-  transform: translateY(-1px);
-}
-
-/* 节点详情 */
-.node-details {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  border-radius: 16px;
-  padding: 24px;
-  margin: 16px 0;
-  border: 1px solid rgba(102, 126, 234, 0.1);
-}
-
-.details-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 2px solid rgba(102, 126, 234, 0.1);
-}
-
-.details-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.node-id-badge {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.properties-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.property-card {
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(102, 126, 234, 0.1);
-  border-radius: 12px;
-  padding: 16px;
-  transition: all 0.3s ease;
-}
-
-.property-card:hover {
-  background: rgba(255, 255, 255, 0.95);
-  border-color: rgba(102, 126, 234, 0.2);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.property-key {
-  font-size: 12px;
-  font-weight: 600;
-  color: #667eea;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-
-.property-value {
-  font-size: 14px;
-  color: #2c3e50;
-  font-weight: 500;
-  word-break: break-all;
-  line-height: 1.4;
-  max-width: 100%;
-  overflow-wrap: break-word;
-}
-
-.property-link {
-  color: #667eea;
-  text-decoration: none;
-  transition: color 0.3s ease;
-  word-break: break-all;
-  display: block;
-}
-
-.property-link:hover {
-  color: #764ba2;
-  text-decoration: underline;
-}
-
-.property-text {
-  word-break: break-all;
-  display: block;
-}
-
-.details-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
-.detail-btn {
-  height: 40px;
-  padding: 0 20px;
-  border-radius: 10px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-}
-
-.detail-btn:hover {
-  transform: translateY(-2px);
+.panel-actions .action-btn {
+  flex: 1;
+  min-width: 100px;
 }
 
 /* 空状态 */
 .empty-section {
   margin-bottom: 24px;
   width: 100%;
+  max-width: 1200px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1496,152 +1227,28 @@ onMounted(async () => {
   margin: 0 0 24px 0;
 }
 
-/* 关系对话框 */
-.relationship-dialog :deep(.el-dialog) {
-  border-radius: 20px;
-  overflow: hidden;
+/* 节点编辑对话框 */
+.properties-editor {
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 16px;
+  background: #f9f9f9;
 }
 
-.relationship-dialog :deep(.el-dialog__header) {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 24px 32px;
-  border: none;
-}
-
-.dialog-header {
-  color: white;
-}
-
-.dialog-title {
-  font-size: 20px;
-  font-weight: 600;
+.property-input-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.dialog-icon {
-  font-size: 24px;
-}
-
-.dialog-subtitle {
-  font-size: 14px;
-  opacity: 0.9;
-}
-
-.relationship-content {
-  padding: 24px;
-}
-
-.relationships-table {
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.relationships-table :deep(.el-table__header) {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-}
-
-.relationships-table :deep(.el-table__header th) {
-  background: transparent;
-  border: none;
-  color: #2c3e50;
-  font-weight: 600;
-}
-
-.relation-type {
-  display: flex;
-  align-items: center;
-}
-
-.type-tag {
-  font-weight: 600;
-  border-radius: 6px;
-}
-
-.direction-indicator {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.direction-arrow {
-  font-size: 18px;
-  font-weight: bold;
-  color: #667eea;
-}
-
-.target-node {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.target-labels {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.target-label {
-  font-size: 12px;
-  font-weight: 500;
-  border-radius: 6px;
-}
-
-.target-properties {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.target-property {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  background: rgba(102, 126, 234, 0.05);
-  padding: 6px 10px;
-  border-radius: 6px;
-  border-left: 2px solid #667eea;
-}
-
-.no-relationships {
-  padding: 40px 0;
-}
-
-.empty-relationship-icon {
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 50%;
-  display: flex;
+  margin-bottom: 8px;
   align-items: center;
-  justify-content: center;
-  margin: 0 auto 16px;
 }
 
-.empty-relationship-icon .el-icon {
-  font-size: 30px;
-  color: white;
-}
-
-.empty-rel-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #2c3e50;
-  margin: 0 0 8px 0;
-}
-
-.empty-rel-subtitle {
-  font-size: 14px;
-  color: #7f8c8d;
-  margin: 0;
+.property-input-row:last-child {
+  margin-bottom: 0;
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .node-query {
+  .node-query-container {
     padding: 16px;
   }
   
@@ -1660,7 +1267,7 @@ onMounted(async () => {
     font-size: 24px;
   }
   
-  .advanced-options {
+  .search-options {
     grid-template-columns: 1fr;
   }
   
@@ -1674,22 +1281,20 @@ onMounted(async () => {
     justify-content: center;
   }
   
-  .properties-grid {
-    grid-template-columns: 1fr;
+  .node-info-panel {
+    width: 100%;
+    position: relative;
+    border-left: none;
+    border-top: 1px solid #e8ecf0;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
   }
   
-  .table-actions {
-    flex-direction: column;
-    gap: 4px;
+  .graph-view {
+    min-height: 500px;
   }
   
-  .details-actions {
-    flex-direction: column;
-  }
-  
-  .relationship-dialog :deep(.el-dialog) {
-    width: 95% !important;
-    margin: 5vh auto;
+  .network-container {
+    height: 500px;
   }
 }
 </style>

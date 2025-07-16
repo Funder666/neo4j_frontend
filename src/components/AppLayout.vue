@@ -47,7 +47,7 @@
               </div>
               <div class="user-info">
                 <span class="username">{{ currentUser?.username }}</span>
-                <span class="login-time">{{ formatTime(currentUser?.loginTime) }}</span>
+                <span class="user-role">{{ getUserRoleText(currentUser?.role) }}</span>
               </div>
               <el-icon class="dropdown-arrow"><ArrowDown /></el-icon>
             </div>
@@ -89,12 +89,6 @@
               <span class="menu-text">关系查询</span>
             </div>
           </el-menu-item>
-          <el-menu-item index="/data" class="menu-item">
-            <div class="menu-content">
-              <el-icon class="menu-icon"><DataLine /></el-icon>
-              <span class="menu-text">数据管理</span>
-            </div>
-          </el-menu-item>
           <el-menu-item index="/config" class="menu-item">
             <div class="menu-content">
               <el-icon class="menu-icon"><Setting /></el-icon>
@@ -127,7 +121,7 @@ import {
   SwitchButton
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
-import neo4jService from '../services/neo4j'
+import apiService from '../services/api'
 
 const props = defineProps({
   showPageActions: {
@@ -162,34 +156,40 @@ const handleMenuSelect = (index) => {
   // 菜单选择处理
 }
 
-const formatTime = (timeStr) => {
-  if (!timeStr) return '-'
-  return new Date(timeStr).toLocaleString()
+const getUserRoleText = (role) => {
+  switch (role) {
+    case 'admin':
+      return '管理员'
+    case 'user':
+      return '普通用户'
+    default:
+      return '用户'
+  }
 }
 
 // 获取连接状态样式类
 const getStatusClass = () => {
-  if (connectionStatus.value.includes('已连接') || connectionStatus.value.includes('连接正常')) {
+  if (connectionStatus.value.includes('正常')) {
     return 'connected'
   }
-  if (connectionStatus.value.includes('连接失败') || connectionStatus.value.includes('连接异常')) {
+  if (connectionStatus.value.includes('异常') || connectionStatus.value.includes('离线')) {
     return 'disconnected'
   }
   return 'checking'
 }
 
 onMounted(async () => {
-  // 检查Neo4j连接状态
+  // 检查后端服务连接状态
   try {
-    const connected = await neo4jService.isConnected()
-    if (connected) {
-      connectionStatus.value = '已连接'
+    const response = await fetch('http://localhost:8000/api/health')
+    if (response.ok) {
+      connectionStatus.value = '服务正常'
     } else {
-      connectionStatus.value = '连接失败'
+      connectionStatus.value = '服务异常'
     }
   } catch (error) {
-    console.error('检查连接状态失败:', error)
-    connectionStatus.value = '连接异常'
+    console.error('检查服务状态失败:', error)
+    connectionStatus.value = '服务离线'
   }
 })
 </script>
@@ -384,7 +384,7 @@ onMounted(async () => {
   color: #2c3e50;
 }
 
-.login-time {
+.user-role {
   font-size: 12px;
   color: #7f8c8d;
 }

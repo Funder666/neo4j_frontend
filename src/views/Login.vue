@@ -109,9 +109,9 @@
         <div class="tip-card">
           <el-icon class="tip-icon"><InfoFilled /></el-icon>
           <div class="tip-content">
-            <p class="tip-title">测试账号</p>
-            <p class="tip-text">用户名: <code>neo4j</code></p>
-            <p class="tip-text">密码: <code>xtxzhu2u</code></p>
+            <p class="tip-title">默认管理员账号</p>
+            <p class="tip-text">用户名: <code>admin</code></p>
+            <p class="tip-text">密码: <code>secret</code></p>
           </div>
         </div>
       </div>
@@ -130,7 +130,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock, Right, Loading, InfoFilled } from '@element-plus/icons-vue'
 import authService from '../services/auth'
-import neo4jService from '../services/neo4j'
+import apiService from '../services/api'
 
 const router = useRouter()
 const loginForm = ref(null)
@@ -162,15 +162,8 @@ const handleLogin = async () => {
     const result = await authService.login(form.username, form.password)
     
     if (result.success) {
-      // 登录成功后尝试连接Neo4j数据库
-      const connected = await neo4jService.connect()
-      
-      if (connected) {
-        ElMessage.success('登录成功！')
-        router.push('/dashboard')
-      } else {
-        ElMessage.error('数据库连接失败，请检查配置')
-      }
+      ElMessage.success('登录成功！')
+      router.push('/dashboard')
     } else {
       ElMessage.error(result.message || '登录失败')
     }

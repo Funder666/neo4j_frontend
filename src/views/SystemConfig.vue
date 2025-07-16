@@ -1,25 +1,37 @@
 <template>
-  <div class="system-config">
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <div class="header-content">
-        <div class="title-section">
-          <div class="page-icon">
-            <el-icon class="icon"><Setting /></el-icon>
+  <AppLayout :show-page-actions="true">
+    <template #page-actions>
+      <el-button 
+        type="info" 
+        class="action-btn"
+        @click="goHome"
+      >
+        <el-icon><HomeFilled /></el-icon>
+        返回首页
+      </el-button>
+    </template>
+    
+    <div class="system-config">
+      <!-- 页面头部 -->
+      <div class="page-header">
+        <div class="header-content">
+          <div class="title-section">
+            <div class="page-icon">
+              <el-icon class="icon"><Setting /></el-icon>
+            </div>
+            <div class="title-text">
+              <h1 class="page-title">系统配置</h1>
+              <p class="page-subtitle">管理数据库连接、系统信息和性能监控</p>
+            </div>
           </div>
-          <div class="title-text">
-            <h1 class="page-title">系统配置</h1>
-            <p class="page-subtitle">管理数据库连接、系统信息和性能监控</p>
-          </div>
-        </div>
-        <div class="header-status">
-          <div class="connection-status">
-            <div class="status-indicator" :class="connectionStatus.type"></div>
-            <span class="status-text">{{ connectionStatus.text }}</span>
+          <div class="header-status">
+            <div class="connection-status">
+              <div class="status-indicator" :class="connectionStatus.type"></div>
+              <span class="status-text">{{ connectionStatus.text }}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
     <!-- 主要内容区域 -->
     <div class="main-content">
@@ -256,86 +268,16 @@
               </div>
             </div>
           </el-tab-pane>
-        
-        <el-tab-pane label="性能监控" name="performance">
-          <div class="config-section">
-            <el-card>
-              <template #header>
-                <div class="card-header">
-                  <span>查询性能</span>
-                  <el-button size="small" @click="refreshPerformance">刷新</el-button>
-                </div>
-              </template>
-              
-              <el-table :data="performanceData" stripe>
-                <el-table-column prop="query" label="查询" min-width="300" />
-                <el-table-column prop="executionTime" label="执行时间(ms)" width="150" />
-                <el-table-column prop="recordsReturned" label="返回记录数" width="150" />
-                <el-table-column prop="timestamp" label="执行时间" width="180" />
-              </el-table>
-            </el-card>
-            
-            <el-card style="margin-top: 20px;">
-              <template #header>
-                <span>内存使用情况</span>
-              </template>
-              
-              <el-row :gutter="20">
-                <el-col :span="8">
-                  <el-statistic title="总内存" :value="memoryInfo.total" suffix="MB" />
-                </el-col>
-                <el-col :span="8">
-                  <el-statistic title="已用内存" :value="memoryInfo.used" suffix="MB" />
-                </el-col>
-                <el-col :span="8">
-                  <el-statistic title="可用内存" :value="memoryInfo.available" suffix="MB" />
-                </el-col>
-              </el-row>
-              
-              <el-progress
-                :percentage="memoryInfo.usagePercent"
-                :status="memoryInfo.usagePercent > 80 ? 'exception' : 'success'"
-                style="margin-top: 20px;"
-              />
-            </el-card>
-          </div>
-        </el-tab-pane>
-        
-        <el-tab-pane label="日志管理" name="logs">
-          <div class="config-section">
-            <el-card>
-              <template #header>
-                <div class="card-header">
-                  <span>系统日志</span>
-                  <div>
-                    <el-button size="small" @click="clearLogs">清空日志</el-button>
-                    <el-button size="small" @click="downloadLogs">下载日志</el-button>
-                  </div>
-                </div>
-              </template>
-              
-              <div class="log-container">
-                <div
-                  v-for="log in logs"
-                  :key="log.id"
-                  :class="['log-item', log.level]"
-                >
-                  <span class="log-time">{{ log.timestamp }}</span>
-                  <span class="log-level">{{ log.level }}</span>
-                  <span class="log-message">{{ log.message }}</span>
-                </div>
-              </div>
-            </el-card>
-          </div>
-        </el-tab-pane>
       </el-tabs>
       </div>
     </div>
-  </div>
+    </div>
+  </AppLayout>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { 
   Setting, 
@@ -346,16 +288,17 @@ import {
   Check, 
   InfoFilled, 
   TrendCharts, 
-  Document, 
-  Download, 
-  Delete,
   Refresh,
   Collection,
   DataLine,
   Share,
-  Search
+  Search,
+  HomeFilled
 } from '@element-plus/icons-vue'
-import neo4jService from '../services/neo4j'
+import apiService from '../services/api'
+import AppLayout from '../components/AppLayout.vue'
+
+const router = useRouter()
 
 const activeTab = ref('database')
 const testing = ref(false)
@@ -403,35 +346,11 @@ const dbStats = reactive({
   constraintCount: 0
 })
 
-const performanceData = ref([])
 
-const memoryInfo = reactive({
-  total: 1024,
-  used: 512,
-  available: 512,
-  usagePercent: 50
-})
-
-const logs = ref([
-  {
-    id: 1,
-    timestamp: '2024-01-01 10:00:00',
-    level: 'INFO',
-    message: '系统启动成功'
-  },
-  {
-    id: 2,
-    timestamp: '2024-01-01 10:01:00',
-    level: 'INFO',
-    message: 'Neo4j数据库连接成功'
-  },
-  {
-    id: 3,
-    timestamp: '2024-01-01 10:02:00',
-    level: 'WARN',
-    message: '内存使用率较高'
-  }
-])
+// 导航方法
+const goHome = () => {
+  router.push('/dashboard')
+}
 
 const testConnection = async () => {
   if (!dbFormRef.value) return
@@ -444,7 +363,7 @@ const testConnection = async () => {
     connectionStatus.type = 'warning'
     connectionStatus.text = '测试中...'
     
-    const connected = await neo4jService.connect()
+    const connected = await apiService.connect()
     
     if (connected) {
       connectionStatus.type = 'success'
@@ -488,30 +407,22 @@ const saveConfig = async () => {
 
 const loadDbStats = async () => {
   try {
-    // 获取节点数量
-    const nodeQuery = 'MATCH (n) RETURN count(n) as count'
-    const nodeResult = await neo4jService.runQuery(nodeQuery)
-    dbStats.nodeCount = nodeResult[0]?.get('count')?.toNumber() || 0
-    
-    // 获取关系数量
-    const relQuery = 'MATCH ()-[r]->() RETURN count(r) as count'
-    const relResult = await neo4jService.runQuery(relQuery)
-    dbStats.relationshipCount = relResult[0]?.get('count')?.toNumber() || 0
-    
-    // 获取标签数量
-    const labelResult = await neo4jService.getAllLabels()
-    dbStats.labelCount = labelResult.length
+    // 使用API服务获取统计数据
+    const statsResponse = await apiService.getStats()
+    dbStats.nodeCount = statsResponse.node_count || 0
+    dbStats.relationshipCount = statsResponse.relationship_count || 0
+    dbStats.labelCount = statsResponse.label_count || 0
     
     // 获取关系类型数量
-    const relTypeResult = await neo4jService.getAllRelationshipTypes()
-    dbStats.relTypeCount = relTypeResult.length
+    const relTypeResponse = await apiService.getRelationshipTypes()
+    dbStats.relTypeCount = relTypeResponse.relationship_types.length
     
     // 获取索引数量 - 使用兼容的查询方式
     try {
       // 尝试新版本的查询
       const indexQuery = 'SHOW INDEXES'
-      const indexResult = await neo4jService.runQuery(indexQuery)
-      dbStats.indexCount = indexResult.length
+      const indexResult = await apiService.runQuery(indexQuery)
+      dbStats.indexCount = indexResult.records.length
     } catch (indexError) {
       console.log('使用备用索引查询方法')
       // 如果新版本不支持，使用其他方法或设置为0
@@ -522,8 +433,8 @@ const loadDbStats = async () => {
     try {
       // 尝试新版本的查询
       const constraintQuery = 'SHOW CONSTRAINTS'
-      const constraintResult = await neo4jService.runQuery(constraintQuery)
-      dbStats.constraintCount = constraintResult.length
+      const constraintResult = await apiService.runQuery(constraintQuery)
+      dbStats.constraintCount = constraintResult.records.length
     } catch (constraintError) {
       console.log('使用备用约束查询方法')
       // 如果新版本不支持，使用其他方法或设置为0
@@ -535,53 +446,6 @@ const loadDbStats = async () => {
   }
 }
 
-const refreshPerformance = () => {
-  // 模拟性能数据
-  performanceData.value = [
-    {
-      query: 'MATCH (n) RETURN n LIMIT 10',
-      executionTime: 45,
-      recordsReturned: 10,
-      timestamp: new Date().toLocaleString()
-    },
-    {
-      query: 'MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 50',
-      executionTime: 120,
-      recordsReturned: 50,
-      timestamp: new Date().toLocaleString()
-    },
-    {
-      query: 'MATCH (n:Person) WHERE n.name CONTAINS "张" RETURN n',
-      executionTime: 89,
-      recordsReturned: 25,
-      timestamp: new Date().toLocaleString()
-    }
-  ]
-  
-  // 更新内存信息
-  memoryInfo.used = Math.floor(Math.random() * 800) + 200
-  memoryInfo.available = memoryInfo.total - memoryInfo.used
-  memoryInfo.usagePercent = Math.round((memoryInfo.used / memoryInfo.total) * 100)
-}
-
-const clearLogs = () => {
-  logs.value = []
-  ElMessage.success('日志已清空')
-}
-
-const downloadLogs = () => {
-  const logText = logs.value.map(log => 
-    `${log.timestamp} [${log.level}] ${log.message}`
-  ).join('\n')
-  
-  const blob = new Blob([logText], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `system_logs_${new Date().toISOString().split('T')[0]}.txt`
-  a.click()
-  URL.revokeObjectURL(url)
-}
 
 const formatNumber = (num) => {
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M'
@@ -598,9 +462,6 @@ onMounted(async () => {
   
   // 加载数据库统计
   await loadDbStats()
-  
-  // 初始化性能数据
-  refreshPerformance()
 })
 </script>
 

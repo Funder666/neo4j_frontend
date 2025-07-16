@@ -17,120 +17,6 @@
             </div>
           </div>
 
-          <!-- 统计卡片 -->
-          <div class="stats-section">
-            <div class="stats-grid">
-              <div class="stat-card nodes">
-                <div class="stat-content">
-                  <div class="stat-icon-wrapper">
-                    <el-icon class="stat-icon"><DataLine /></el-icon>
-                  </div>
-                  <div class="stat-details">
-                    <div class="stat-number">{{ formatNumber(stats.nodeCount) }}</div>
-                    <div class="stat-label">节点总数</div>
-                    <div class="stat-trend">+12% 本月</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="stat-card relationships">
-                <div class="stat-content">
-                  <div class="stat-icon-wrapper">
-                    <el-icon class="stat-icon"><Share /></el-icon>
-                  </div>
-                  <div class="stat-details">
-                    <div class="stat-number">{{ formatNumber(stats.relationshipCount) }}</div>
-                    <div class="stat-label">关系总数</div>
-                    <div class="stat-trend">+8% 本月</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="stat-card labels">
-                <div class="stat-content">
-                  <div class="stat-icon-wrapper">
-                    <el-icon class="stat-icon"><Collection /></el-icon>
-                  </div>
-                  <div class="stat-details">
-                    <div class="stat-number">{{ formatNumber(stats.labelCount) }}</div>
-                    <div class="stat-label">标签类型</div>
-                    <div class="stat-trend">+2 新增</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="stat-card performance">
-                <div class="stat-content">
-                  <div class="stat-icon-wrapper">
-                    <el-icon class="stat-icon"><TrendCharts /></el-icon>
-                  </div>
-                  <div class="stat-details">
-                    <div class="stat-number">98.5%</div>
-                    <div class="stat-label">性能指标</div>
-                    <div class="stat-trend">+1.2% 优化</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 功能面板 -->
-          <div class="features-section">
-            <div class="section-header">
-              <h3>快速功能</h3>
-              <p>选择一个功能开始使用</p>
-            </div>
-            
-            <div class="features-grid">
-              <div class="feature-card" @click="$router.push('/query')">
-                <div class="feature-icon query">
-                  <el-icon><Search /></el-icon>
-                </div>
-                <div class="feature-content">
-                  <h4>节点查询</h4>
-                  <p>使用中文关键词快速查找节点信息</p>
-                  <div class="feature-stats">
-                    <span>支持模糊搜索</span>
-                  </div>
-                </div>
-                <div class="feature-arrow">
-                  <el-icon><ArrowRight /></el-icon>
-                </div>
-              </div>
-
-              <div class="feature-card" @click="$router.push('/graph')">
-                <div class="feature-icon visualization">
-                  <el-icon><Share /></el-icon>
-                </div>
-                <div class="feature-content">
-                  <h4>图形可视化</h4>
-                  <p>直观展示节点关系和图结构</p>
-                  <div class="feature-stats">
-                    <span>交互式图表</span>
-                  </div>
-                </div>
-                <div class="feature-arrow">
-                  <el-icon><ArrowRight /></el-icon>
-                </div>
-              </div>
-
-              <div class="feature-card" @click="$router.push('/data')">
-                <div class="feature-icon management">
-                  <el-icon><DataLine /></el-icon>
-                </div>
-                <div class="feature-content">
-                  <h4>数据管理</h4>
-                  <p>创建、编辑和删除节点与关系</p>
-                  <div class="feature-stats">
-                    <span>CRUD 操作</span>
-                  </div>
-                </div>
-                <div class="feature-arrow">
-                  <el-icon><ArrowRight /></el-icon>
-                </div>
-              </div>
-            </div>
-          </div>
 
           <!-- 系统状态面板 -->
           <div class="system-section">
@@ -190,17 +76,13 @@ import {
   House,
   Search,
   Share,
-  DataLine,
   Setting,
-  Collection,
   SwitchButton,
-  TrendCharts,
-  ArrowRight,
   Connection,
   Refresh
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
-import neo4jService from '../services/neo4j'
+import apiService from '../services/api'
 import AppLayout from '../components/AppLayout.vue'
 
 const route = useRoute()
@@ -210,64 +92,29 @@ const currentUser = ref(authService.getCurrentUser())
 const connectionStatus = ref('检查中...')
 const testing = ref(false)
 const reconnecting = ref(false)
-const stats = reactive({
-  nodeCount: 0,
-  relationshipCount: 0,
-  labelCount: 0
-})
-
 // 这些函数现在由 AppLayout 组件处理
 
-const loadStats = async () => {
-  try {
-    // 获取节点数量
-    const nodeQuery = 'MATCH (n) RETURN count(n) as count'
-    const nodeResult = await neo4jService.runQuery(nodeQuery)
-    const nodeCount = nodeResult[0]?.get('count')
-    stats.nodeCount = nodeCount && typeof nodeCount.toNumber === 'function' ? nodeCount.toNumber() : 0
-    
-    // 获取关系数量
-    const relQuery = 'MATCH ()-[r]->() RETURN count(r) as count'
-    const relResult = await neo4jService.runQuery(relQuery)
-    const relCount = relResult[0]?.get('count')
-    stats.relationshipCount = relCount && typeof relCount.toNumber === 'function' ? relCount.toNumber() : 0
-    
-    // 获取标签数量
-    const labelResult = await neo4jService.getAllLabels()
-    stats.labelCount = Array.isArray(labelResult) ? labelResult.length : 0
-    
-    connectionStatus.value = '已连接'
-  } catch (error) {
-    console.error('加载统计数据失败:', error)
-    connectionStatus.value = '连接异常'
-    // 重置统计数据为0，防止显示错误的数据
-    stats.nodeCount = 0
-    stats.relationshipCount = 0
-    stats.labelCount = 0
-  }
-}
-
 onMounted(async () => {
-  // 确保Neo4j连接
+  // 确保后端API连接
   try {
-    const connected = await neo4jService.connect()
+    const connected = await apiService.connect()
     if (connected) {
-      loadStats()
+      connectionStatus.value = '已连接'
     } else {
       connectionStatus.value = '连接失败'
-      ElMessage.error('无法连接到Neo4j数据库')
+      ElMessage.error('无法连接到后端API')
     }
   } catch (error) {
-    console.error('连接Neo4j失败:', error)
+    console.error('连接后端API失败:', error)
     connectionStatus.value = '连接失败'
-    ElMessage.error('数据库连接失败，请检查网络或配置')
+    ElMessage.error('后端服务连接失败，请检查网络或后端服务状态')
   }
 })
 
 const testConnection = async () => {
   testing.value = true
   try {
-    const isConnected = await neo4jService.isConnected()
+    const isConnected = await apiService.isConnected()
     if (isConnected) {
       ElMessage.success('连接正常')
       connectionStatus.value = '连接正常'
@@ -288,7 +135,7 @@ const reconnect = async () => {
   reconnecting.value = true
   try {
     connectionStatus.value = '重连中...'
-    const connected = await neo4jService.connect()
+    const connected = await apiService.connect()
     
     if (connected) {
       ElMessage.success('重新连接成功')
@@ -308,16 +155,6 @@ const reconnect = async () => {
   }
 }
 
-// 格式化数字显示
-const formatNumber = (num) => {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K'
-  }
-  return num.toString()
-}
 
 // 格式化时间显示
 const formatTime = (timeStr) => {

@@ -3,7 +3,6 @@ import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import NodeQuery from '../views/NodeQuery.vue'
 import RelationshipQuery from '../views/RelationshipQuery.vue'
-import DataManagement from '../views/DataManagement.vue'
 import SystemConfig from '../views/SystemConfig.vue'
 
 const routes = [
@@ -32,12 +31,6 @@ const routes = [
     path: '/relationships',
     name: 'RelationshipQuery',
     component: RelationshipQuery,
-    meta: { requiresAuth: true }
-  },
-  {
-    path: '/data',
-    name: 'DataManagement',
-    component: DataManagement,
     meta: { requiresAuth: true }
   },
   {

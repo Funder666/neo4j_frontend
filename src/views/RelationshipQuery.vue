@@ -198,6 +198,26 @@
                       </div>
                     </div>
                   </div>
+                  
+                  <!-- 管理员操作按钮 -->
+                  <div v-if="isAdmin" class="panel-actions">
+                    <el-button 
+                      type="primary" 
+                      size="small"
+                      @click="editNode(selectedElement.data)"
+                    >
+                      <el-icon><Edit /></el-icon>
+                      编辑节点
+                    </el-button>
+                    <el-button 
+                      type="danger" 
+                      size="small"
+                      @click="deleteNode(selectedElement.data)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                      删除节点
+                    </el-button>
+                  </div>
                 </div>
                 
                 <!-- 关系信息 -->
@@ -210,16 +230,16 @@
                     <div class="info-item">
                       <span class="info-label">类型:</span>
                       <el-tag type="warning" effect="light" class="rel-type-tag">
-                        {{ selectedElement.data.relType }}
+                        {{ selectedElement.data.type }}
                       </el-tag>
                     </div>
                     <div class="info-item">
                       <span class="info-label">方向:</span>
-                      <span class="info-value">{{ selectedElement.data.startNode }} → {{ selectedElement.data.endNode }}</span>
+                      <span class="info-value">{{ selectedElement.data.start_node_id }} → {{ selectedElement.data.end_node_id }}</span>
                     </div>
                   </div>
                   
-                  <div class="element-properties" v-if="Object.keys(selectedElement.data.properties).length > 0">
+                  <div class="element-properties" v-if="Object.keys(selectedElement.data.properties || {}).length > 0">
                     <h5 class="properties-title">属性</h5>
                     <div class="properties-list">
                       <div 
@@ -231,6 +251,26 @@
                         <div class="property-val">{{ formatProperty(value) }}</div>
                       </div>
                     </div>
+                  </div>
+                  
+                  <!-- 关系管理员操作按钮 -->
+                  <div v-if="isAdmin" class="panel-actions">
+                    <el-button 
+                      type="primary" 
+                      size="small"
+                      @click="editRelationship(selectedElement.data)"
+                    >
+                      <el-icon><Edit /></el-icon>
+                      编辑关系
+                    </el-button>
+                    <el-button 
+                      type="danger" 
+                      size="small"
+                      @click="deleteRelationship(selectedElement.data)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                      删除关系
+                    </el-button>
                   </div>
                 </div>
               </div>
@@ -259,11 +299,84 @@
         </div>
       </div>
     </div>
+    
+    <!-- 节点编辑对话框 -->
+    <el-dialog
+      v-model="nodeDialog.visible"
+      title="编辑节点"
+      width="600px"
+      class="node-dialog"
+    >
+      <el-form
+        ref="nodeForm"
+        :model="nodeDialog.form"
+        :rules="nodeDialog.rules"
+        label-width="100px"
+      >
+        <el-form-item label="节点标签" prop="labels">
+          <el-select
+            v-model="nodeDialog.form.labels"
+            multiple
+            filterable
+            allow-create
+            placeholder="选择或输入标签"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="label in availableLabels"
+              :key="label"
+              :label="label"
+              :value="label"
+            />
+          </el-select>
+        </el-form-item>
+        
+        <el-form-item label="节点属性">
+          <div class="properties-editor">
+            <div 
+              v-for="(prop, index) in nodeDialog.form.properties" 
+              :key="index"
+              class="property-input-row"
+            >
+              <el-input
+                v-model="prop.key"
+                placeholder="属性名"
+                style="width: 40%"
+              />
+              <el-input
+                v-model="prop.value"
+                placeholder="属性值"
+                style="width: 40%"
+              />
+              <el-button
+                type="danger"
+                @click="removeProperty(index)"
+                :disabled="nodeDialog.form.properties.length <= 1"
+              >
+                删除
+              </el-button>
+            </div>
+            <el-button type="primary" @click="addProperty">
+              添加属性
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="nodeDialog.visible = false">取消</el-button>
+          <el-button type="primary" @click="saveNode" :loading="nodeDialog.loading">
+            保存
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </AppLayout>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
@@ -277,9 +390,12 @@ import {
   DataLine,
   HomeFilled,
   Close,
-  Loading
+  Loading,
+  Edit,
+  Delete
 } from '@element-plus/icons-vue'
-import neo4jService from '../services/neo4j'
+import apiService from '../services/api'
+import authService from '../services/auth'
 import AppLayout from '../components/AppLayout.vue'
 import { Network } from 'vis-network'
 
@@ -297,16 +413,37 @@ const relationshipTypes = ref([])
 const selectedRelType = ref('')
 const nodeLimit = ref(25)
 
+// 权限控制
+const currentUser = computed(() => authService.getCurrentUser())
+const isAdmin = computed(() => currentUser.value?.role === 'admin')
+
+// 节点编辑对话框
+const nodeDialog = reactive({
+  visible: false,
+  loading: false,
+  form: {
+    labels: [],
+    properties: [{ key: 'name', value: '' }]
+  },
+  rules: {
+    labels: [
+      { required: true, message: '请选择至少一个标签', trigger: 'change' }
+    ]
+  }
+})
+
+const nodeForm = ref(null)
+const availableLabels = ref([])
+
 // 加载关系类型
 const loadRelationshipTypes = async () => {
   loadingTypes.value = true
   try {
-    const query = 'MATCH ()-[r]->() RETURN type(r) as type, count(r) as count ORDER BY count DESC'
-    const result = await neo4jService.runQuery(query)
+    const response = await apiService.getRelationshipTypes()
     
-    relationshipTypes.value = result.map(record => ({
-      type: record.get('type'),
-      count: record.get('count').toNumber()
+    relationshipTypes.value = response.relationship_types.map(item => ({
+      type: item.type,
+      count: item.count
     }))
     
     ElMessage.success(`加载了 ${relationshipTypes.value.length} 种关系类型`)
@@ -342,7 +479,6 @@ const clearResults = () => {
   }
 }
 
-
 // 查询特定关系类型
 const queryRelationship = async () => {
   if (!selectedRelType.value) {
@@ -356,16 +492,12 @@ const queryRelationship = async () => {
   
   try {
     const query = `MATCH (n)-[r:${selectedRelType.value}]->(m) RETURN n, r, m LIMIT ${nodeLimit.value}`
-    const result = await neo4jService.runQuery(query)
+    const response = await apiService.runQuery(query)
     
     // 直接使用原始数据结构，不进行转换
-    queryResults.value = result.map(record => {
-      const recordData = {}
-      record.keys.forEach(key => {
-        const value = record.get(key)
-        recordData[key] = value
-      })
-      return recordData
+    queryResults.value = response.records.map(record => {
+      // API返回的record已经是对象格式，直接使用
+      return record
     })
     
     executionTime.value = Date.now() - startTime
@@ -416,9 +548,9 @@ const createNetwork = () => {
   // 处理查询结果，提取节点和关系
   queryResults.value.forEach(record => {
     // 直接处理记录中的 n, r, m 字段
-    if (record.n && record.n.identity) {
+    if (record.n && record.n.id) {
       // 处理起始节点 n
-      const nodeId = record.n.identity.low || record.n.identity
+      const nodeId = record.n.id
       if (!nodes.has(nodeId)) {
         const nodeLabel = record.n.properties.name || record.n.properties.value || record.n.properties.title || `${record.n.labels[0] || 'Node'}`
         const tooltip = `ID: ${nodeId}\n标签: ${record.n.labels.join(', ')}\n属性: ${Object.keys(record.n.properties).length} 个`
@@ -437,23 +569,24 @@ const createNetwork = () => {
             }
           },
           font: { 
-            color: '#ffffff', 
-            size: 13,
-            face: 'Helvetica Neue, Arial',
+            color: '#2c3e50', 
+            size: 20,
+            face: 'Arial, Microsoft YaHei, sans-serif',
             strokeWidth: 2,
-            strokeColor: darkenColor(getNodeColor(record.n.labels[0]), 0.5)
+            strokeColor: '#ffffff',
+            bold: true
           },
-          shape: 'dot',
-          size: 30,
+          shape: 'circle',
+          size: 50,
           borderWidth: 3,
           data: record.n
         })
       }
     }
     
-    if (record.m && record.m.identity) {
+    if (record.m && record.m.id) {
       // 处理目标节点 m
-      const nodeId = record.m.identity.low || record.m.identity
+      const nodeId = record.m.id
       if (!nodes.has(nodeId)) {
         const nodeLabel = record.m.properties.name || record.m.properties.value || record.m.properties.title || `${record.m.labels[0] || 'Node'}`
         const tooltip = `ID: ${nodeId}\n标签: ${record.m.labels.join(', ')}\n属性: ${Object.keys(record.m.properties).length} 个`
@@ -472,25 +605,26 @@ const createNetwork = () => {
             }
           },
           font: { 
-            color: '#ffffff', 
-            size: 13,
-            face: 'Helvetica Neue, Arial',
+            color: '#2c3e50', 
+            size: 20,
+            face: 'Arial, Microsoft YaHei, sans-serif',
             strokeWidth: 2,
-            strokeColor: darkenColor(getNodeColor(record.m.labels[0]), 0.5)
+            strokeColor: '#ffffff',
+            bold: true
           },
-          shape: 'dot',
-          size: 30,
+          shape: 'circle',
+          size: 50,
           borderWidth: 3,
           data: record.m
         })
       }
     }
     
-    if (record.r && record.r.identity) {
+    if (record.r && record.r.id) {
       // 处理关系 r
-      const relationshipId = record.r.identity.low || record.r.identity
-      const startId = record.r.start.low || record.r.start
-      const endId = record.r.end.low || record.r.end
+      const relationshipId = record.r.id
+      const startId = record.r.start_node_id
+      const endId = record.r.end_node_id
       
       edges.push({
         id: relationshipId,
@@ -502,89 +636,6 @@ const createNetwork = () => {
         data: record.r
       })
     }
-    
-    // 保留原有的路径处理逻辑（如果需要的话）
-    Object.values(record).forEach(item => {
-      if (item && typeof item === 'object' && item.type === 'path') {
-          // 处理路径数据
-          item.segments.forEach(segment => {
-            // 添加起始节点
-            if (!nodes.has(segment.start.id)) {
-              const startLabel = segment.start.properties.name || segment.start.properties.title || `${segment.start.labels[0] || 'Node'}`
-              const startTooltip = `ID: ${segment.start.id}\n标签: ${segment.start.labels.join(', ')}\n属性: ${Object.keys(segment.start.properties).length} 个`
-              
-              nodes.set(segment.start.id, {
-                id: segment.start.id,
-                label: startLabel,
-                group: segment.start.labels[0] || 'Unknown',
-                title: startTooltip,
-                color: {
-                  background: getNodeColor(segment.start.labels[0]),
-                  border: darkenColor(getNodeColor(segment.start.labels[0]), 0.3),
-                  highlight: {
-                    background: lightenColor(getNodeColor(segment.start.labels[0]), 0.2),
-                    border: darkenColor(getNodeColor(segment.start.labels[0]), 0.2)
-                  }
-                },
-                font: { 
-                  color: '#ffffff', 
-                  size: 13,
-                  face: 'Helvetica Neue, Arial',
-                  strokeWidth: 2,
-                  strokeColor: darkenColor(getNodeColor(segment.start.labels[0]), 0.5)
-                },
-                shape: 'dot',
-                size: 30,
-                borderWidth: 3,
-                data: { type: 'node', ...segment.start }
-              })
-            }
-            
-            // 添加结束节点
-            if (!nodes.has(segment.end.id)) {
-              const endLabel = segment.end.properties.name || segment.end.properties.title || `${segment.end.labels[0] || 'Node'}`
-              const endTooltip = `ID: ${segment.end.id}\n标签: ${segment.end.labels.join(', ')}\n属性: ${Object.keys(segment.end.properties).length} 个`
-              
-              nodes.set(segment.end.id, {
-                id: segment.end.id,
-                label: endLabel,
-                group: segment.end.labels[0] || 'Unknown',
-                title: endTooltip,
-                color: {
-                  background: getNodeColor(segment.end.labels[0]),
-                  border: darkenColor(getNodeColor(segment.end.labels[0]), 0.3),
-                  highlight: {
-                    background: lightenColor(getNodeColor(segment.end.labels[0]), 0.2),
-                    border: darkenColor(getNodeColor(segment.end.labels[0]), 0.2)
-                  }
-                },
-                font: { 
-                  color: '#ffffff', 
-                  size: 13,
-                  face: 'Helvetica Neue, Arial',
-                  strokeWidth: 2,
-                  strokeColor: darkenColor(getNodeColor(segment.end.labels[0]), 0.5)
-                },
-                shape: 'dot',
-                size: 30,
-                borderWidth: 3,
-                data: { type: 'node', ...segment.end }
-              })
-            }
-            
-            // 添加关系
-            edges.push({
-              id: segment.relationship.id,
-              from: segment.start.id,
-              to: segment.end.id,
-              label: segment.relationship.relType,
-              color: { color: '#667eea', hover: '#764ba2' },
-              font: { color: '#667eea', size: 12 },
-              data: { type: 'relationship', relType: segment.relationship.relType, startNode: segment.start.id, endNode: segment.end.id, ...segment.relationship }
-            })
-          })
-        }
-    })
   })
   
   // 网络配置 - 类似 Neo4j Browser 样式
@@ -779,9 +830,161 @@ const exportResults = () => {
   URL.revokeObjectURL(url)
 }
 
+// CRUD操作方法
+const editNode = (node) => {
+  nodeDialog.currentNodeId = node.id
+  nodeDialog.form = {
+    labels: [...node.labels],
+    properties: Object.entries(node.properties).map(([key, value]) => ({ key, value }))
+  }
+  nodeDialog.visible = true
+}
+
+const addProperty = () => {
+  nodeDialog.form.properties.push({ key: '', value: '' })
+}
+
+const removeProperty = (index) => {
+  nodeDialog.form.properties.splice(index, 1)
+}
+
+const saveNode = async () => {
+  try {
+    await nodeForm.value.validate()
+    
+    nodeDialog.loading = true
+    
+    const properties = {}
+    nodeDialog.form.properties.forEach(prop => {
+      if (prop.key && prop.value) {
+        properties[prop.key] = prop.value
+      }
+    })
+
+    await apiService.updateNode(nodeDialog.currentNodeId, properties)
+    ElMessage.success('节点更新成功')
+    
+    // 重新查询以更新结果
+    if (selectedRelType.value) {
+      await queryRelationship()
+    }
+    selectedElement.value = null
+    nodeDialog.visible = false
+  } catch (error) {
+    console.error('保存节点失败:', error)
+    ElMessage.error('保存节点失败: ' + error.message)
+  } finally {
+    nodeDialog.loading = false
+  }
+}
+
+// 加载可用标签
+const loadAvailableLabels = async () => {
+  try {
+    const response = await apiService.getAllLabels()
+    availableLabels.value = response.labels || []
+  } catch (error) {
+    console.error('加载标签失败:', error)
+  }
+}
+
+const deleteNode = async (node) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除节点 ${node.id} 吗？这个操作不可撤销。`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    await apiService.deleteNode(node.id)
+    ElMessage.success('节点删除成功')
+    
+    // 重新查询以更新结果
+    if (selectedRelType.value) {
+      await queryRelationship()
+    }
+    selectedElement.value = null
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除节点失败:', error)
+      ElMessage.error('删除节点失败: ' + error.message)
+    }
+  }
+}
+
+const editRelationship = async (relationship) => {
+  try {
+    const { value: newProperties } = await ElMessageBox.prompt(
+      '请输入关系的新属性（JSON格式）：',
+      '编辑关系',
+      {
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputType: 'textarea',
+        inputValue: JSON.stringify(relationship.properties || {}, null, 2)
+      }
+    )
+
+    let properties
+    try {
+      properties = JSON.parse(newProperties || '{}')
+    } catch (e) {
+      ElMessage.error('属性格式不正确，请输入有效的JSON格式')
+      return
+    }
+
+    await apiService.updateRelationship(relationship.id, properties)
+    ElMessage.success('关系更新成功')
+    
+    // 重新查询以更新结果
+    if (selectedRelType.value) {
+      await queryRelationship()
+    }
+    selectedElement.value = null
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('编辑关系失败:', error)
+      ElMessage.error('编辑关系失败: ' + error.message)
+    }
+  }
+}
+
+const deleteRelationship = async (relationship) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除关系 ${relationship.id} 吗？这个操作不可撤销。`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    await apiService.deleteRelationship(relationship.id)
+    ElMessage.success('关系删除成功')
+    
+    // 重新查询以更新结果
+    if (selectedRelType.value) {
+      await queryRelationship()
+    }
+    selectedElement.value = null
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除关系失败:', error)
+      ElMessage.error('删除关系失败: ' + error.message)
+    }
+  }
+}
+
 onMounted(() => {
-  // 初始化时加载关系类型
+  // 初始化时加载关系类型和可用标签
   loadRelationshipTypes()
+  loadAvailableLabels()
 })
 </script>
 
@@ -789,15 +992,17 @@ onMounted(() => {
 /* 主容器 */
 .relationship-query-container {
   width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 0;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 /* 关系类型选择区域 */
 .relationship-types-section {
   margin-bottom: 24px;
   width: 100%;
+  max-width: 1200px;
 }
 
 .types-card {
@@ -894,6 +1099,7 @@ onMounted(() => {
 .query-params-section {
   margin-bottom: 24px;
   width: 100%;
+  max-width: 900px;
 }
 
 .params-card {
@@ -998,6 +1204,7 @@ onMounted(() => {
 .results-section {
   margin-bottom: 24px;
   width: 100%;
+  max-width: 1200px;
 }
 
 .results-card {
@@ -1226,11 +1433,13 @@ onMounted(() => {
 
 /* 空状态 */
 .empty-section {
+  margin-bottom: 24px;
+  width: 100%;
+  max-width: 1200px;
   display: flex;
   justify-content: center;
   align-items: center;
   min-height: 400px;
-  width: 100%;
 }
 
 .empty-card {
@@ -1274,6 +1483,21 @@ onMounted(() => {
   margin: 0 0 24px 0;
 }
 
+/* 管理员操作按钮 */
+.panel-actions {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.panel-actions .el-button {
+  flex: 1;
+  min-width: 100px;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .relationship-query-container {
@@ -1313,5 +1537,24 @@ onMounted(() => {
   .network-container {
     height: 500px;
   }
+}
+
+/* 节点编辑对话框 */
+.properties-editor {
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  padding: 16px;
+  background: #f9f9f9;
+}
+
+.property-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.property-input-row:last-child {
+  margin-bottom: 0;
 }
 </style>
