@@ -136,10 +136,10 @@ pm2 startup
 
 ## 环境变量说明
 
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `GEMINI_API_KEY` | Gemini AI API密钥（可选） | - |
-| `VITE_API_BASE_URL` | 后端API地址 | `http://localhost:5000` |
+| 变量名 | 说明 | 默认值                     |
+|--------|------|-------------------------|
+| `GEMINI_API_KEY` | Gemini AI API密钥（可选） | -                       |
+| `VITE_API_BASE_URL` | 后端API地址 | `http://localhost:8000` |
 
 ## 项目结构
 
