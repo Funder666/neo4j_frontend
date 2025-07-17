@@ -5,8 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:8888": "vite --port 8888 --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "serve": "vite preview --port 8888 --host 0.0.0.0"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
