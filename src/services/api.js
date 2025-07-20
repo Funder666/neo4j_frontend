@@ -1,5 +1,5 @@
 // API服务 - 调用后端REST API
-const API_BASE_URL = 'http://8.153.207.172:8000/api'
+const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
 
 class ApiService {
   constructor() {

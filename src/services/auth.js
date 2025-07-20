@@ -2,7 +2,7 @@ class AuthService {
   constructor() {
     this.TOKEN_KEY = 'neo4j_token'
     this.USER_KEY = 'neo4j_user'
-    this.API_BASE_URL = 'http://8.153.207.172:8000'
+    this.API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000'
   }
 
   // 登录
