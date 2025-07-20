@@ -19,7 +19,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 8887,
     strictPort: true,
-    allowedHosts: ['chineseedu.shuishan.net.cn']
+    allowedHosts: true
   },
   preview: {
     host: '0.0.0.0',

@@ -116,17 +116,27 @@
         <div class="results-header">
           <div class="results-title">
             <h3 class="section-title">
-              <el-icon><Collection /></el-icon>
-              查询结果
+              <el-icon v-if="showingRelationships"><Share /></el-icon>
+              <el-icon v-else><Collection /></el-icon>
+              {{ showingRelationships ? '关系图' : '查询结果' }}
             </h3>
             <div class="results-stats">
-              <span class="result-count">{{ results.length }}</span>
-              <span class="result-text">个节点</span>
+              <span class="result-count">{{ showingRelationships ? (relationshipData?.relationships?.length || 0) : results.length }}</span>
+              <span class="result-text">{{ showingRelationships ? '个关系' : '个节点' }}</span>
             </div>
           </div>
           <div class="results-actions">
             <el-button 
-              v-if="isAdmin"
+              v-if="showingRelationships"
+              type="warning" 
+              class="action-btn"
+              @click="backToSearchResults"
+            >
+              <el-icon><RefreshRight /></el-icon>
+              返回搜索结果
+            </el-button>
+            <el-button 
+              v-if="isAdmin && !showingRelationships"
               type="success" 
               class="action-btn"
               @click="showCreateNodeDialog"
@@ -204,24 +214,34 @@
                 </div>
               </div>
               
-              <!-- 管理员操作按钮 -->
-              <div v-if="isAdmin" class="panel-actions">
+              <!-- 节点操作按钮 -->
+              <div class="panel-actions">
                 <el-button 
-                  type="primary" 
+                  type="success" 
                   class="action-btn"
-                  @click="editNode(selectedNode)"
+                  @click="showNodeRelationships(selectedNode)"
                 >
-                  <el-icon><Edit /></el-icon>
-                  编辑节点
+                  <el-icon><Share /></el-icon>
+                  查看关系
                 </el-button>
-                <el-button 
-                  type="danger" 
-                  class="action-btn"
-                  @click="deleteNode(selectedNode)"
-                >
-                  <el-icon><Delete /></el-icon>
-                  删除节点
-                </el-button>
+                <div v-if="isAdmin" class="admin-actions">
+                  <el-button 
+                    type="primary" 
+                    class="action-btn"
+                    @click="editNode(selectedNode)"
+                  >
+                    <el-icon><Edit /></el-icon>
+                    编辑节点
+                  </el-button>
+                  <el-button 
+                    type="danger" 
+                    class="action-btn"
+                    @click="deleteNode(selectedNode)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                    删除节点
+                  </el-button>
+                </div>
               </div>
             </div>
           </div>
@@ -339,7 +359,8 @@ import {
   HomeFilled,
   Plus,
   Edit,
-  Delete
+  Delete,
+  Share
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -359,6 +380,8 @@ const selectedNode = ref(null)
 const availableLabels = ref([])
 const networkContainer = ref(null)
 const network = ref(null)
+const showingRelationships = ref(false)
+const relationshipData = ref(null)
 
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
@@ -392,6 +415,8 @@ const clearResults = () => {
   searched.value = false
   searchQuery.value = ''
   selectedNode.value = null
+  showingRelationships.value = false
+  relationshipData.value = null
   if (network.value) {
     network.value.destroy()
     network.value = null
@@ -690,6 +715,324 @@ const saveNode = async () => {
   }
 }
 
+// 查看节点关系
+const showNodeRelationships = async (node) => {
+  try {
+    loading.value = true
+    
+    // 获取节点的所有关系
+    const response = await apiService.getNodeRelationships(node.id)
+    
+    console.log('API response for node relationships:', response)
+    
+    // 检查不同可能的数据结构
+    let relationships = null
+    if (response.relationships) {
+      relationships = response.relationships
+    } else if (response.records) {
+      relationships = response.records
+    } else if (Array.isArray(response)) {
+      relationships = response
+    }
+    
+    if (!relationships || relationships.length === 0) {
+      ElMessage.info('该节点没有关联的关系')
+      return
+    }
+    
+    console.log('Processed relationships:', relationships)
+    
+    // 设置关系数据并切换显示模式
+    relationshipData.value = { relationships }
+    showingRelationships.value = true
+    
+    // 创建关系图
+    setTimeout(() => {
+      createRelationshipNetwork(node, relationships)
+    }, 100)
+    
+    ElMessage.success(`找到 ${relationships.length} 个关系`)
+  } catch (error) {
+    console.error('获取节点关系失败:', error)
+    ElMessage.error('获取节点关系失败: ' + error.message)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 创建关系网络图
+const createRelationshipNetwork = (centerNode, relationships) => {
+  if (!networkContainer.value) return
+
+  console.log('Creating relationship network with:', {
+    centerNode,
+    relationships,
+    relationshipsLength: relationships.length
+  })
+
+  // 清理旧的网络
+  if (network.value) {
+    network.value.destroy()
+  }
+
+  // 构建节点和边数据
+  const nodes = new Map()
+  const edges = []
+
+  // 添加中心节点
+  nodes.set(centerNode.id, {
+    id: centerNode.id,
+    label: (centerNode.properties && centerNode.properties.name) || 
+           (centerNode.properties && centerNode.properties.value ? centerNode.properties.value.trim() : '') || 
+           `节点 ${centerNode.id}`,
+    group: (centerNode.labels && centerNode.labels[0]) || 'Unknown',
+    title: `ID: ${centerNode.id}\n标签: ${centerNode.labels ? centerNode.labels.join(', ') : 'Unknown'}\n属性: ${centerNode.properties ? Object.keys(centerNode.properties).length : 0} 个`,
+    color: {
+      background: '#FF6B6B', // 中心节点使用特殊颜色
+      border: '#E55654'
+    },
+    font: { 
+      color: '#2c3e50', 
+      size: 24, // 中心节点更大
+      face: 'Arial, sans-serif',
+      strokeWidth: 2,
+      strokeColor: '#ffffff',
+      bold: true
+    },
+    shape: 'circle',
+    size: 80, // 中心节点更大
+    data: centerNode,
+    borderWidth: 4
+  })
+
+  // 处理关系并添加相关节点 - 根据RelationshipQuery.vue的数据结构
+  relationships.forEach((record, index) => {
+    console.log('Processing relationship record:', record)
+    
+    // 检查record的结构，API可能返回类似 {n, r, m} 的格式
+    let startNode, relationship, endNode
+    
+    if (record.n && record.r && record.m) {
+      // 如果是 {n, r, m} 格式
+      startNode = record.n
+      relationship = record.r
+      endNode = record.m
+    } else if (record.start_node && record.relationship && record.end_node) {
+      // 如果是 {start_node, relationship, end_node} 格式
+      startNode = record.start_node
+      relationship = record.relationship
+      endNode = record.end_node
+    } else {
+      // 直接的关系对象格式，可能包含完整的节点信息
+      console.log('Processing direct relationship format:', record)
+      
+      // 尝试从关系对象中提取信息
+      if (record.type && (record.start_node_id || record.end_node_id)) {
+        relationship = record
+        // 如果有完整的节点数据，使用它们
+        if (record.start_node) {
+          startNode = record.start_node
+        }
+        if (record.end_node) {
+          endNode = record.end_node
+        }
+        // 如果没有完整节点数据，可能需要从其他地方获取
+        if (!startNode || !endNode) {
+          console.log('Missing node data in relationship:', record)
+          return
+        }
+      } else {
+        console.log('Unsupported relationship format:', record)
+        return
+      }
+    }
+
+    // 添加起始节点（如果不存在）
+    if (startNode && startNode.id && !nodes.has(startNode.id)) {
+      const nodeLabel = (startNode.properties && startNode.properties.name) || 
+                       (startNode.properties && startNode.properties.value) || 
+                       `节点 ${startNode.id}`
+      nodes.set(startNode.id, {
+        id: startNode.id,
+        label: nodeLabel,
+        group: (startNode.labels && startNode.labels[0]) || 'Unknown',
+        title: `ID: ${startNode.id}\n标签: ${startNode.labels ? startNode.labels.join(', ') : 'Unknown'}\n属性: ${startNode.properties ? Object.keys(startNode.properties).length : 0} 个`,
+        color: {
+          background: getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'),
+          border: darkenColor(getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'), 0.3)
+        },
+        font: { 
+          color: '#2c3e50', 
+          size: 18, 
+          face: 'Arial, sans-serif',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        shape: 'circle',
+        size: 50,
+        data: startNode
+      })
+    }
+
+    // 添加结束节点（如果不存在）
+    if (endNode && endNode.id && !nodes.has(endNode.id)) {
+      const nodeLabel = (endNode.properties && endNode.properties.name) || 
+                       (endNode.properties && endNode.properties.value) || 
+                       `节点 ${endNode.id}`
+      nodes.set(endNode.id, {
+        id: endNode.id,
+        label: nodeLabel,
+        group: (endNode.labels && endNode.labels[0]) || 'Unknown',
+        title: `ID: ${endNode.id}\n标签: ${endNode.labels ? endNode.labels.join(', ') : 'Unknown'}\n属性: ${endNode.properties ? Object.keys(endNode.properties).length : 0} 个`,
+        color: {
+          background: getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'),
+          border: darkenColor(getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'), 0.3)
+        },
+        font: { 
+          color: '#2c3e50', 
+          size: 18, 
+          face: 'Arial, sans-serif',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        shape: 'circle',
+        size: 50,
+        data: endNode
+      })
+    }
+
+    // 添加边
+    if (relationship && startNode && endNode) {
+      edges.push({
+        id: relationship.id || `edge_${index}`,
+        from: startNode.id,
+        to: endNode.id,
+        label: relationship.type,
+        title: `关系类型: ${relationship.type}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
+        color: {
+          color: '#667eea',
+          highlight: '#764ba2'
+        },
+        font: {
+          color: '#2c3e50',
+          size: 14,
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        arrows: {
+          to: {
+            enabled: true,
+            scaleFactor: 1.2
+          }
+        },
+        smooth: {
+          enabled: true,
+          type: 'dynamic',
+          roundness: 0.2
+        },
+        width: 2,
+        data: relationship
+      })
+    }
+  })
+
+  const data = {
+    nodes: Array.from(nodes.values()),
+    edges: edges
+  }
+
+  const options = {
+    nodes: {
+      borderWidth: 3,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.2)',
+        size: 10,
+        x: 2,
+        y: 2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 18,
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      chosen: {
+        node: (values, id, selected, hovering) => {
+          values.shadow = true
+          values.shadowSize = 15
+          values.borderWidth = 4
+        }
+      }
+    },
+    edges: {
+      arrows: {
+        to: { enabled: true, scaleFactor: 1.2 }
+      },
+      smooth: {
+        enabled: true,
+        type: 'dynamic',
+        roundness: 0.2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 12,
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      }
+    },
+    interaction: {
+      hover: true,
+      selectConnectedEdges: true,
+      tooltipDelay: 300
+    },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 200 },
+      barnesHut: {
+        gravitationalConstant: -3000,
+        centralGravity: 0.5,
+        springLength: 150,
+        springConstant: 0.06,
+        damping: 0.1
+      }
+    },
+    layout: {
+      improvedLayout: true
+    }
+  }
+
+  network.value = new Network(networkContainer.value, data, options)
+
+  // 监听节点选择事件
+  network.value.on('selectNode', (params) => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0]
+      const nodeData = nodes.get(nodeId)
+      if (nodeData) {
+        selectedNode.value = nodeData.data
+      }
+    }
+  })
+
+  // 监听空白区域点击
+  network.value.on('deselectNode', () => {
+    selectedNode.value = null
+  })
+}
+
+// 返回搜索结果
+const backToSearchResults = () => {
+  showingRelationships.value = false
+  relationshipData.value = null
+  selectedNode.value = null
+  
+  // 重新创建原始搜索结果的网络图
+  setTimeout(() => {
+    createNetwork()
+  }, 100)
+}
 
 const formatProperty = (value) => {
   if (typeof value === 'object') {
@@ -1172,6 +1515,18 @@ onMounted(() => {
 }
 
 .panel-actions .action-btn {
+  flex: 1;
+  min-width: 100px;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.admin-actions .action-btn {
   flex: 1;
   min-width: 100px;
 }
