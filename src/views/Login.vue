@@ -44,7 +44,7 @@
             </svg>
           </div>
         </div>
-        <h1 class="title">Neo4j 管理系统</h1>
+        <h1 class="title">国际中文图数据库系统</h1>
         <p class="subtitle">图数据库可视化管理平台</p>
       </div>
       
@@ -96,7 +96,6 @@
                 立即登录
               </span>
               <span v-else>
-                <el-icon class="loading-icon"><Loading /></el-icon>
                 登录中...
               </span>
             </el-button>
@@ -104,17 +103,17 @@
         </el-form>
       </div>
       
-      <!-- 提示信息 -->
-      <div class="login-tips">
-        <div class="tip-card">
-          <el-icon class="tip-icon"><InfoFilled /></el-icon>
-          <div class="tip-content">
-            <p class="tip-title">默认管理员账号</p>
-            <p class="tip-text">用户名: <code>admin</code></p>
-            <p class="tip-text">密码: <code>secret</code></p>
-          </div>
-        </div>
-      </div>
+<!--      &lt;!&ndash; 提示信息 &ndash;&gt;-->
+<!--      <div class="login-tips">-->
+<!--        <div class="tip-card">-->
+<!--          <el-icon class="tip-icon"><InfoFilled /></el-icon>-->
+<!--          <div class="tip-content">-->
+<!--            <p class="tip-title">默认管理员账号</p>-->
+<!--            <p class="tip-text">用户名: <code>admin</code></p>-->
+<!--            <p class="tip-text">密码: <code>admin</code></p>-->
+<!--          </div>-->
+<!--        </div>-->
+<!--      </div>-->
     </div>
 
     <!-- 底部信息 -->

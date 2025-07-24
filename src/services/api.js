@@ -1,5 +1,6 @@
 // API服务 - 调用后端REST API
-const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
+// const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
+const API_BASE_URL = 'http://localhost:8000/api'
 
 class ApiService {
   constructor() {
@@ -233,6 +234,29 @@ class ApiService {
       console.error('查询执行失败:', error)
       throw error
     }
+  }
+
+  // 标签映射相关API
+  async getLabelMappings(type = null) {
+    const params = type ? { type } : {}
+    return this.get('/labels/mappings', params)
+  }
+
+  async getPropertyPermissions(labelMappingId) {
+    return this.get(`/labels/${labelMappingId}/properties`)
+  }
+
+  async getDisplayName(neo4jName, type) {
+    return this.get(`/labels/display-name/${neo4jName}`, { type })
+  }
+
+  // 管理员API
+  async createLabelMapping(mapping) {
+    return this.post('/admin/labels/mappings', mapping)
+  }
+
+  async updatePropertyPermissions(permissions) {
+    return this.put('/admin/properties/permissions', permissions)
   }
 
   // Neo4j integer兼容

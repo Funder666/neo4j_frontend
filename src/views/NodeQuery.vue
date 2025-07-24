@@ -87,9 +87,9 @@
                 <el-option label="全部标签" value="" />
                 <el-option
                   v-for="label in availableLabels"
-                  :key="label"
-                  :label="label"
-                  :value="label"
+                  :key="label.neo4j_name"
+                  :label="label.display_name"
+                  :value="label.neo4j_name"
                 />
               </el-select>
             </div>
@@ -196,11 +196,11 @@
                 <h5 class="properties-title">属性</h5>
                 <div class="properties-list">
                   <div 
-                    v-for="(value, key) in selectedNode.properties"
+                    v-for="(value, key) in getVisibleProperties(selectedNode)"
                     :key="key"
                     class="property-row"
                   >
-                    <div class="property-name">{{ key }}</div>
+                    <div class="property-name">{{ getPropertyDisplayName(key, selectedNode.labels) }}</div>
                     <div class="property-val">
                       <a v-if="isUrl(formatProperty(value))" 
                          :href="formatProperty(value)" 
@@ -293,9 +293,9 @@
           >
             <el-option
               v-for="label in availableLabels"
-              :key="label"
-              :label="label"
-              :value="label"
+              :key="label.neo4j_name"
+              :label="label.display_name"
+              :value="label.neo4j_name"
             />
           </el-select>
         </el-form-item>
@@ -382,6 +382,7 @@ const networkContainer = ref(null)
 const network = ref(null)
 const showingRelationships = ref(false)
 const relationshipData = ref(null)
+const propertyPermissions = ref({})
 
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
@@ -514,8 +515,7 @@ const createNetwork = () => {
         size: 20,
         face: 'Arial, Microsoft YaHei, sans-serif',
         strokeWidth: 2,
-        strokeColor: '#ffffff',
-        bold: true
+        strokeColor: '#ffffff'
       },
       chosen: {
         node: (values, id, selected, hovering) => {
@@ -796,8 +796,7 @@ const createRelationshipNetwork = (centerNode, relationships) => {
       size: 24, // 中心节点更大
       face: 'Arial, sans-serif',
       strokeWidth: 2,
-      strokeColor: '#ffffff',
-      bold: true
+      strokeColor: '#ffffff'
     },
     shape: 'circle',
     size: 80, // 中心节点更大
@@ -1053,11 +1052,104 @@ const isUrl = (str) => {
 // 加载可用标签
 const loadAvailableLabels = async () => {
   try {
-    const response = await apiService.getAllLabels()
-    availableLabels.value = response.labels || []
+    const response = await apiService.getLabelMappings('node')
+    availableLabels.value = response.node_labels || []
+    
+    // 同时加载每个标签的属性权限
+    for (const label of availableLabels.value) {
+      await loadPropertyPermissions(label.id)
+    }
   } catch (error) {
     console.error('加载标签失败:', error)
+    // 如果新API失败，尝试使用旧API作为后备
+    try {
+      const fallbackResponse = await apiService.getAllLabels()
+      availableLabels.value = (fallbackResponse.labels || []).map(label => ({
+        neo4j_name: label,
+        display_name: label,
+        description: null
+      }))
+    } catch (fallbackError) {
+      console.error('加载标签失败（后备方案）:', fallbackError)
+    }
   }
+}
+
+// 加载属性权限映射
+const loadPropertyPermissions = async (labelMappingId) => {
+  try {
+    const response = await apiService.getPropertyPermissions(labelMappingId)
+    const permissions = response.properties || []
+    
+    // 创建属性键到权限信息的映射
+    const permissionMap = {}
+    permissions.forEach(prop => {
+      permissionMap[prop.property_key] = {
+        display_name: prop.display_name,
+        can_view: prop.can_view,
+        can_edit: prop.can_edit
+      }
+    })
+    
+    propertyPermissions.value[labelMappingId] = permissionMap
+  } catch (error) {
+    console.error(`加载标签 ${labelMappingId} 的属性权限失败:`, error)
+  }
+}
+
+// 检查属性是否可见
+const isPropertyVisible = (propertyKey, nodeLabels) => {
+  if (!nodeLabels || nodeLabels.length === 0) {
+    return true // 如果没有标签信息，默认可见
+  }
+  
+  // 查找匹配的标签映射
+  const matchingLabel = availableLabels.value.find(label => 
+    nodeLabels.includes(label.neo4j_name)
+  )
+  
+  if (matchingLabel && propertyPermissions.value[matchingLabel.id]) {
+    const permission = propertyPermissions.value[matchingLabel.id][propertyKey]
+    // 只有在权限配置中明确允许查看的属性才显示
+    return permission ? permission.can_view : false
+  }
+  
+  return true // 如果没有找到匹配的标签映射，默认可见（兼容旧数据）
+}
+
+// 获取属性的显示名称
+const getPropertyDisplayName = (propertyKey, nodeLabels) => {
+  if (!nodeLabels || nodeLabels.length === 0) {
+    return propertyKey
+  }
+  
+  // 查找匹配的标签映射
+  const matchingLabel = availableLabels.value.find(label => 
+    nodeLabels.includes(label.neo4j_name)
+  )
+  
+  if (matchingLabel && propertyPermissions.value[matchingLabel.id]) {
+    const permission = propertyPermissions.value[matchingLabel.id][propertyKey]
+    return permission ? permission.display_name || propertyKey : propertyKey
+  }
+  
+  return propertyKey
+}
+
+// 获取节点的可见属性
+const getVisibleProperties = (node) => {
+  if (!node || !node.properties) {
+    return {}
+  }
+  
+  const visibleProps = {}
+  Object.entries(node.properties).forEach(([key, value]) => {
+    if (isPropertyVisible(key, node.labels)) {
+      visibleProps[key] = value
+    }
+  })
+  
+  return visibleProps
 }
 
 onMounted(() => {

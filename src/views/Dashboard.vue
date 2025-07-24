@@ -95,21 +95,23 @@ const reconnecting = ref(false)
 // 这些函数现在由 AppLayout 组件处理
 
 onMounted(async () => {
-  // 确保后端API连接
+  // 初始化连接状态检查
+  await checkConnectionStatus()
+})
+
+const checkConnectionStatus = async () => {
   try {
-    const connected = await apiService.connect()
-    if (connected) {
-      connectionStatus.value = '已连接'
+    const isConnected = await apiService.isConnected()
+    if (isConnected) {
+      connectionStatus.value = '连接正常'
     } else {
-      connectionStatus.value = '连接失败'
-      ElMessage.error('无法连接到后端API')
+      connectionStatus.value = '连接断开'
     }
   } catch (error) {
-    console.error('连接后端API失败:', error)
-    connectionStatus.value = '连接失败'
-    ElMessage.error('后端服务连接失败，请检查网络或后端服务状态')
+    console.error('检查连接状态失败:', error)
+    connectionStatus.value = '连接异常'
   }
-})
+}
 
 const testConnection = async () => {
   testing.value = true
@@ -140,8 +142,6 @@ const reconnect = async () => {
     if (connected) {
       ElMessage.success('重新连接成功')
       connectionStatus.value = '已连接'
-      // 重新加载统计数据
-      loadStats()
     } else {
       ElMessage.error('重新连接失败')
       connectionStatus.value = '连接失败'

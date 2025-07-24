@@ -42,11 +42,11 @@
                 @click="selectRelationType(relType.type)"
               >
                 <div class="type-header">
-                  <div class="type-name">{{ relType.type }}</div>
+                  <div class="type-name">{{ relType.display_name || relType.type }}</div>
                   <div class="type-count">{{ relType.count }} 个关系</div>
                 </div>
                 <div class="type-description">
-                  点击查看 {{ relType.type }} 类型的所有关系
+                  {{ relType.description || `点击查看 ${relType.display_name || relType.type} 类型的所有关系` }}
                 </div>
               </div>
             </div>
@@ -77,10 +77,36 @@
               <el-icon><Setting /></el-icon>
               查询参数
             </h3>
-            <p class="section-subtitle">设置 {{ selectedRelType }} 关系的查询参数</p>
+            <p class="section-subtitle">设置 {{ selectedRelTypeDisplayName }} 关系的查询参数</p>
           </div>
           
           <div class="params-form">
+            <div class="param-group">
+              <div class="param-label">
+                <el-icon><User /></el-icon>
+                起始节点（可选）
+              </div>
+              <el-input
+                v-model="startNodeFilter"
+                placeholder="输入起始节点包含的关键词，如：前"
+                class="param-input"
+                clearable
+              />
+            </div>
+            
+            <div class="param-group">
+              <div class="param-label">
+                <el-icon><User /></el-icon>
+                终止节点（可选）
+              </div>
+              <el-input
+                v-model="endNodeFilter"
+                placeholder="输入终止节点包含的关键词，如：后"
+                class="param-input"
+                clearable
+              />
+            </div>
+            
             <div class="param-group">
               <div class="param-label">
                 <el-icon><DataLine /></el-icon>
@@ -104,7 +130,8 @@
                 class="query-btn"
               >
                 <el-icon><Search /></el-icon>
-                查询 {{ selectedRelType }} 关系
+                查询关系
+                <span v-if="startNodeFilter || endNodeFilter">（按节点过滤）</span>
               </el-button>
             </div>
           </div>
@@ -181,11 +208,11 @@
                     <h5 class="properties-title">属性</h5>
                     <div class="properties-list">
                       <div 
-                        v-for="(value, key) in selectedElement.data.properties"
+                        v-for="(value, key) in getVisibleProperties(selectedElement.data, selectedElement.type)"
                         :key="key"
                         class="property-row"
                       >
-                        <div class="property-name">{{ key }}</div>
+                        <div class="property-name">{{ getPropertyDisplayName(key, selectedElement.type, selectedElement.data.labels) }}</div>
                         <div class="property-val">
                           <a v-if="isUrl(formatProperty(value))" 
                              :href="formatProperty(value)" 
@@ -239,15 +266,15 @@
                     </div>
                   </div>
                   
-                  <div class="element-properties" v-if="Object.keys(selectedElement.data.properties || {}).length > 0">
+                  <div class="element-properties" v-if="Object.keys(getVisibleProperties(selectedElement.data, selectedElement.type)).length > 0">
                     <h5 class="properties-title">属性</h5>
                     <div class="properties-list">
                       <div 
-                        v-for="(value, key) in selectedElement.data.properties"
+                        v-for="(value, key) in getVisibleProperties(selectedElement.data, selectedElement.type)"
                         :key="key"
                         class="property-row"
                       >
-                        <div class="property-name">{{ key }}</div>
+                        <div class="property-name">{{ getPropertyDisplayName(key, selectedElement.type, selectedElement.data.type) }}</div>
                         <div class="property-val">{{ formatProperty(value) }}</div>
                       </div>
                     </div>
@@ -392,7 +419,8 @@ import {
   Close,
   Loading,
   Edit,
-  Delete
+  Delete,
+  User
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -412,10 +440,20 @@ const network = ref(null)
 const relationshipTypes = ref([])
 const selectedRelType = ref('')
 const nodeLimit = ref(25)
+const startNodeFilter = ref('')
+const endNodeFilter = ref('')
+const propertyPermissions = ref({})
 
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
+
+// 计算选中关系类型的显示名称
+const selectedRelTypeDisplayName = computed(() => {
+  if (!selectedRelType.value) return ''
+  const relType = relationshipTypes.value.find(type => type.type === selectedRelType.value)
+  return relType ? (relType.display_name || relType.type) : selectedRelType.value
+})
 
 // 节点编辑对话框
 const nodeDialog = reactive({
@@ -439,12 +477,58 @@ const availableLabels = ref([])
 const loadRelationshipTypes = async () => {
   loadingTypes.value = true
   try {
-    const response = await apiService.getRelationshipTypes()
+    // 首先尝试使用新的标签映射API
+    const mappingResponse = await apiService.getLabelMappings('relationship')
+    const relationshipMappings = mappingResponse.relationship_labels || []
     
-    relationshipTypes.value = response.relationship_types.map(item => ({
-      type: item.type,
-      count: item.count
-    }))
+    if (relationshipMappings.length > 0) {
+      // 使用映射数据，但需要获取计数信息
+      try {
+        const countResponse = await apiService.getRelationshipTypes()
+        const countMap = {}
+        countResponse.relationship_types.forEach(item => {
+          countMap[item.type] = item.count
+        })
+        
+        relationshipTypes.value = relationshipMappings.map(mapping => ({
+          id: mapping.id,
+          type: mapping.neo4j_name,
+          display_name: mapping.display_name,
+          count: countMap[mapping.neo4j_name] || 0,
+          description: mapping.description
+        }))
+        
+        // 同时加载每个关系类型的属性权限
+        for (const mapping of relationshipMappings) {
+          await loadPropertyPermissions(mapping.id)
+        }
+      } catch (countError) {
+        // 如果获取计数失败，使用映射数据但不显示计数
+        relationshipTypes.value = relationshipMappings.map(mapping => ({
+          id: mapping.id,
+          type: mapping.neo4j_name,
+          display_name: mapping.display_name,
+          count: 0,
+          description: mapping.description
+        }))
+        
+        // 即使计数失败，也要加载属性权限
+        for (const mapping of relationshipMappings) {
+          await loadPropertyPermissions(mapping.id)
+        }
+      }
+    } else {
+      // 如果没有映射数据，使用原始API
+      const response = await apiService.getRelationshipTypes()
+      relationshipTypes.value = response.relationship_types.map(item => ({
+        type: item.type,
+        display_name: item.type,
+        count: item.count,
+        description: null,
+        icon: null,
+        color: null
+      }))
+    }
     
     ElMessage.success(`加载了 ${relationshipTypes.value.length} 种关系类型`)
   } catch (error) {
@@ -473,6 +557,8 @@ const clearResults = () => {
   queryResults.value = []
   searched.value = false
   selectedElement.value = null
+  startNodeFilter.value = ''
+  endNodeFilter.value = ''
   if (network.value) {
     network.value.destroy()
     network.value = null
@@ -491,13 +577,79 @@ const queryRelationship = async () => {
   const startTime = Date.now()
   
   try {
-    const query = `MATCH (n)-[r:${selectedRelType.value}]->(m) RETURN n, r, m LIMIT ${nodeLimit.value}`
-    const response = await apiService.runQuery(query)
+    // 构建查询语句
+    let query = `MATCH (n)-[r:${selectedRelType.value}]->(m)`
     
-    // 直接使用原始数据结构，不进行转换
+    // 添加节点过滤条件
+    const whereConditions = []
+    
+    if (startNodeFilter.value && startNodeFilter.value.trim()) {
+      // 检查起始节点的属性是否包含关键词
+      whereConditions.push(`(
+        (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR 
+        (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR 
+        (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
+      )`)
+    }
+    
+    if (endNodeFilter.value && endNodeFilter.value.trim()) {
+      // 检查终止节点的属性是否包含关键词
+      whereConditions.push(`(
+        (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR 
+        (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR 
+        (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
+      )`)
+    }
+    
+    if (whereConditions.length > 0) {
+      query += ` WHERE ` + whereConditions.join(' AND ')
+    }
+    
+    query += ` RETURN n, r, m LIMIT ${nodeLimit.value}`
+    
+    // 准备参数
+    const parameters = {}
+    if (startNodeFilter.value && startNodeFilter.value.trim()) {
+      parameters.startFilter = startNodeFilter.value.trim()
+    }
+    if (endNodeFilter.value && endNodeFilter.value.trim()) {
+      parameters.endFilter = endNodeFilter.value.trim()
+    }
+    
+    console.log('执行查询:', query, '参数:', parameters)
+    
+    const response = await apiService.runQuery(query, parameters)
+    
+    // 处理查询结果，应用权限过滤
     queryResults.value = response.records.map(record => {
-      // API返回的record已经是对象格式，直接使用
-      return record
+      // 创建过滤后的record副本
+      const filteredRecord = { ...record }
+      
+      // 过滤节点n的属性
+      if (record.n && record.n.properties) {
+        filteredRecord.n = {
+          ...record.n,
+          properties: getVisibleProperties(record.n, 'node')
+        }
+      }
+      
+      // 过滤关系r的属性
+      if (record.r && record.r.properties) {
+        filteredRecord.r = {
+          ...record.r,
+          properties: getVisibleProperties(record.r, 'relationship')
+        }
+      }
+      
+      // 过滤节点m的属性
+      if (record.m && record.m.properties) {
+        filteredRecord.m = {
+          ...record.m,
+          properties: getVisibleProperties(record.m, 'node')
+        }
+      }
+      
+      return filteredRecord
     })
     
     executionTime.value = Date.now() - startTime
@@ -881,11 +1033,139 @@ const saveNode = async () => {
 // 加载可用标签
 const loadAvailableLabels = async () => {
   try {
-    const response = await apiService.getAllLabels()
-    availableLabels.value = response.labels || []
+    // 首先尝试加载节点标签映射
+    const mappingResponse = await apiService.getLabelMappings('node')
+    const nodeMappings = mappingResponse.node_labels || []
+    
+    if (nodeMappings.length > 0) {
+      availableLabels.value = nodeMappings
+      
+      // 加载每个节点标签的属性权限
+      for (const mapping of nodeMappings) {
+        await loadPropertyPermissions(mapping.id)
+      }
+    } else {
+      // 如果没有映射数据，使用原始API作为后备
+      const response = await apiService.getAllLabels()
+      availableLabels.value = (response.labels || []).map(label => ({
+        neo4j_name: label,
+        display_name: label,
+        description: null
+      }))
+    }
   } catch (error) {
     console.error('加载标签失败:', error)
+    // 后备方案
+    try {
+      const response = await apiService.getAllLabels()
+      availableLabels.value = (response.labels || []).map(label => ({
+        neo4j_name: label,
+        display_name: label,
+        description: null
+      }))
+    } catch (fallbackError) {
+      console.error('加载标签失败（后备方案）:', fallbackError)
+    }
   }
+}
+
+// 加载属性权限映射
+const loadPropertyPermissions = async (labelMappingId) => {
+  try {
+    const response = await apiService.getPropertyPermissions(labelMappingId)
+    const permissions = response.properties || []
+    
+    // 创建属性键到权限信息的映射
+    const permissionMap = {}
+    permissions.forEach(prop => {
+      permissionMap[prop.property_key] = {
+        display_name: prop.display_name,
+        can_view: prop.can_view,
+        can_edit: prop.can_edit
+      }
+    })
+    
+    propertyPermissions.value[labelMappingId] = permissionMap
+  } catch (error) {
+    console.error(`加载标签 ${labelMappingId} 的属性权限失败:`, error)
+  }
+}
+
+// 检查属性是否可见
+const isPropertyVisible = (propertyKey, elementType, elementLabels) => {
+  // 对于节点，使用节点的标签
+  if (elementType === 'node' && elementLabels && elementLabels.length > 0) {
+    // 查找匹配的节点标签映射
+    const matchingLabel = availableLabels.value.find(label => 
+      elementLabels.includes(label.neo4j_name)
+    )
+    
+    if (matchingLabel && matchingLabel.id && propertyPermissions.value[matchingLabel.id]) {
+      const permission = propertyPermissions.value[matchingLabel.id][propertyKey]
+      return permission ? permission.can_view : false
+    }
+  }
+  
+  // 对于关系，使用关系类型查找对应的标签映射
+  if (elementType === 'relationship') {
+    const matchingRelType = relationshipTypes.value.find(relType => 
+      relType.type === elementLabels
+    )
+    
+    if (matchingRelType && matchingRelType.id && propertyPermissions.value[matchingRelType.id]) {
+      const permission = propertyPermissions.value[matchingRelType.id][propertyKey]
+      return permission ? permission.can_view : false
+    }
+  }
+  
+  return true // 默认可见（兼容没有权限配置的情况）
+}
+
+// 获取属性的显示名称
+const getPropertyDisplayName = (propertyKey, elementType, elementLabels) => {
+  // 对于节点
+  if (elementType === 'node' && elementLabels && elementLabels.length > 0) {
+    const matchingLabel = availableLabels.value.find(label => 
+      elementLabels.includes(label.neo4j_name)
+    )
+    
+    if (matchingLabel && matchingLabel.id && propertyPermissions.value[matchingLabel.id]) {
+      const permission = propertyPermissions.value[matchingLabel.id][propertyKey]
+      return permission ? permission.display_name || propertyKey : propertyKey
+    }
+  }
+  
+  // 对于关系
+  if (elementType === 'relationship') {
+    const matchingRelType = relationshipTypes.value.find(relType => 
+      relType.type === elementLabels
+    )
+    
+    if (matchingRelType && matchingRelType.id && propertyPermissions.value[matchingRelType.id]) {
+      const permission = propertyPermissions.value[matchingRelType.id][propertyKey]
+      return permission ? permission.display_name || propertyKey : propertyKey
+    }
+  }
+  
+  return propertyKey
+}
+
+// 获取元素的可见属性
+const getVisibleProperties = (element, elementType) => {
+  if (!element || !element.properties) {
+    return {}
+  }
+  
+  const visibleProps = {}
+  const elementLabels = elementType === 'relationship' ? element.type : element.labels
+  
+  Object.entries(element.properties).forEach(([key, value]) => {
+    if (isPropertyVisible(key, elementType, elementLabels)) {
+      visibleProps[key] = value
+    }
+  })
+  
+  return visibleProps
 }
 
 const deleteNode = async (node) => {
@@ -1161,6 +1441,17 @@ onMounted(() => {
   border-color: #667eea;
   background: rgba(255, 255, 255, 1);
   box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+.param-input :deep(.el-input__inner) {
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.param-input :deep(.el-input__inner::placeholder) {
+  color: #a0a7b0;
+  font-weight: 400;
 }
 
 .param-actions {

@@ -23,7 +23,7 @@
               </svg>
             </div>
             <div class="app-title">
-              <h1>Neo4j 管理系统</h1>
+              <h1>国际中文图数据库系统</h1>
               <span class="subtitle">图数据库可视化平台</span>
             </div>
           </div>
@@ -144,10 +144,12 @@ const handleCommand = (command) => {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
-    }).then(() => {
-      authService.logout()
+    }).then(async () => {
+      await authService.logout()
       router.push('/login')
       ElMessage.success('退出登录成功')
+    }).catch(() => {
+      // 用户取消登出，不需要任何操作
     })
   }
 }
@@ -181,12 +183,8 @@ const getStatusClass = () => {
 onMounted(async () => {
   // 检查后端服务连接状态
   try {
-    const response = await fetch('http://localhost:8000/api/health')
-    if (response.ok) {
-      connectionStatus.value = '服务正常'
-    } else {
-      connectionStatus.value = '服务异常'
-    }
+    const response = await apiService.healthCheck()
+    connectionStatus.value = '服务正常'
   } catch (error) {
     console.error('检查服务状态失败:', error)
     connectionStatus.value = '服务离线'
