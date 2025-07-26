@@ -21,94 +21,110 @@
     </template>
     
     <div class="node-query-container">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="header-content">
-          <div class="title-section">
-            <div class="page-icon">
-              <el-icon class="icon"><Search /></el-icon>
+      <!-- 节点标签选择区域 -->
+      <div class="node-labels-section">
+        <div class="labels-card">
+          <div class="labels-header">
+            <h3 class="section-title">
+              <el-icon><Collection /></el-icon>
+              节点标签
+            </h3>
+            <p class="section-subtitle">点击节点标签查看相关节点</p>
+          </div>
+          
+          <div class="labels-content">
+            <div v-if="availableLabels.length > 0" class="labels-grid">
+              <div 
+                v-for="label in availableLabels"
+                :key="label.neo4j_name"
+                class="label-card"
+                :class="{ active: selectedLabel === label.neo4j_name }"
+                @click="selectLabel(label.neo4j_name)"
+              >
+                <div class="label-header">
+                  <div class="label-name">{{ label.display_name || label.neo4j_name }}</div>
+                  <div class="label-count">{{ label.count }} 个节点</div>
+                </div>
+                <div class="label-description">
+                  {{ label.description || `点击查看 ${label.display_name || label.neo4j_name} 类型的所有节点` }}
+                </div>
+              </div>
             </div>
-            <div class="title-text">
-              <h1 class="page-title">节点查询</h1>
-              <p class="page-subtitle">搜索和探索图数据库中的节点信息</p>
+            
+            <div v-else-if="loadingLabels" class="loading-labels">
+              <el-icon class="is-loading"><Loading /></el-icon>
+              <span>正在加载节点标签...</span>
+            </div>
+            
+            <div v-else class="no-labels">
+              <el-empty description="暂无节点数据">
+                <template #image>
+                  <div class="empty-icon">
+                    <el-icon><Collection /></el-icon>
+                  </div>
+                </template>
+              </el-empty>
             </div>
           </div>
         </div>
       </div>
-
-    <!-- 查询区域 -->
-    <div class="search-section">
-      <div class="search-card">
-        <div class="search-header">
-          <h3 class="section-title">
-            <el-icon><Search /></el-icon>
-            智能搜索
-          </h3>
-          <p class="section-subtitle">输入关键词快速定位相关节点</p>
-        </div>
-        
-        <div class="search-form">
-          <div class="input-group">
-            <div class="search-input-wrapper">
+      
+      <!-- 查询参数设置 -->
+      <div class="query-params-section" v-if="selectedLabel">
+        <div class="params-card">
+          <div class="params-header">
+            <h3 class="section-title">
+              <el-icon><Setting /></el-icon>
+              查询参数
+            </h3>
+            <p class="section-subtitle">设置 {{ selectedLabelDisplayName }} 节点的查询参数</p>
+          </div>
+          
+          <div class="params-form">
+            <div class="param-group">
+              <div class="param-label">
+                <el-icon><Search /></el-icon>
+                关键词搜索（可选）
+              </div>
               <el-input
                 v-model="searchQuery"
                 placeholder="输入关键词搜索节点..."
-                class="search-input"
-                size="large"
-                :loading="loading"
-                @keyup.enter="performSearch"
-              >
-                <template #prefix>
-                  <el-icon class="search-icon"><Search /></el-icon>
-                </template>
-              </el-input>
-            </div>
-            <el-button 
-              type="primary" 
-              class="search-btn"
-              @click="performSearch"
-              :loading="loading"
-              size="large"
-            >
-              <el-icon><Search /></el-icon>
-              搜索
-            </el-button>
-          </div>
-          
-          <div class="search-options">
-            <div class="option-group">
-              <label class="option-label">节点标签：</label>
-              <el-select 
-                v-model="selectedLabel" 
-                placeholder="选择标签过滤"
+                class="param-input"
                 clearable
-                class="option-select"
-              >
-                <el-option label="全部标签" value="" />
-                <el-option
-                  v-for="label in availableLabels"
-                  :key="label.neo4j_name"
-                  :label="label.display_name"
-                  :value="label.neo4j_name"
-                />
-              </el-select>
+              />
             </div>
             
-            <div class="option-group">
-              <label class="option-label">结果数量：</label>
+            <div class="param-group">
+              <div class="param-label">
+                <el-icon><DataLine /></el-icon>
+                节点数量限制
+              </div>
               <el-input-number
                 v-model="limit"
                 :min="1"
                 :max="1000"
                 :step="10"
                 :precision="0"
-                class="option-number"
+                class="param-input"
               />
+            </div>
+            
+            <div class="param-actions">
+              <el-button 
+                type="primary"
+                size="large"
+                @click="performSearch"
+                :loading="loading"
+                class="query-btn"
+              >
+                <el-icon><Search /></el-icon>
+                查询节点
+                <span v-if="searchQuery">(按关键词过滤)</span>
+              </el-button>
             </div>
           </div>
         </div>
       </div>
-    </div>
     
     <!-- 查询结果区域 -->
     <div class="results-section" v-if="results.length > 0">
@@ -136,7 +152,7 @@
               返回搜索结果
             </el-button>
             <el-button 
-              v-if="isAdmin && !showingRelationships"
+              v-if="canCreateNode() && !showingRelationships"
               type="success" 
               class="action-btn"
               @click="showCreateNodeDialog"
@@ -192,6 +208,44 @@
                 </div>
               </div>
               
+              <!-- 节点操作区域 -->
+              <div class="node-operations">
+                <h5 class="operations-title">操作</h5>
+                <div class="panel-actions">
+                  <el-button 
+                    type="success" 
+                    size="small"
+                    class="action-btn"
+                    @click="showNodeRelationships(selectedNode)"
+                  >
+                    <el-icon><Share /></el-icon>
+                    查看关系
+                  </el-button>
+                  <div v-if="canEditNode(selectedNode) || canDeleteNode(selectedNode)" class="admin-actions">
+                    <el-button 
+                      v-if="canEditNode(selectedNode)"
+                      type="primary" 
+                      size="small"
+                      class="action-btn"
+                      @click="editNode(selectedNode)"
+                    >
+                      <el-icon><Edit /></el-icon>
+                      编辑节点
+                    </el-button>
+                    <el-button 
+                      v-if="canDeleteNode(selectedNode)"
+                      type="danger" 
+                      size="small"
+                      class="action-btn"
+                      @click="deleteNode(selectedNode)"
+                    >
+                      <el-icon><Delete /></el-icon>
+                      删除节点
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+              
               <div class="node-properties">
                 <h5 class="properties-title">属性</h5>
                 <div class="properties-list">
@@ -211,36 +265,6 @@
                       <span v-else>{{ formatProperty(value) }}</span>
                     </div>
                   </div>
-                </div>
-              </div>
-              
-              <!-- 节点操作按钮 -->
-              <div class="panel-actions">
-                <el-button 
-                  type="success" 
-                  class="action-btn"
-                  @click="showNodeRelationships(selectedNode)"
-                >
-                  <el-icon><Share /></el-icon>
-                  查看关系
-                </el-button>
-                <div v-if="isAdmin" class="admin-actions">
-                  <el-button 
-                    type="primary" 
-                    class="action-btn"
-                    @click="editNode(selectedNode)"
-                  >
-                    <el-icon><Edit /></el-icon>
-                    编辑节点
-                  </el-button>
-                  <el-button 
-                    type="danger" 
-                    class="action-btn"
-                    @click="deleteNode(selectedNode)"
-                  >
-                    <el-icon><Delete /></el-icon>
-                    删除节点
-                  </el-button>
                 </div>
               </div>
             </div>
@@ -360,7 +384,10 @@ import {
   Plus,
   Edit,
   Delete,
-  Share
+  Share,
+  Setting,
+  DataLine,
+  Loading
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -371,6 +398,7 @@ const router = useRouter()
 
 // 响应式数据
 const loading = ref(false)
+const loadingLabels = ref(true)
 const searched = ref(false)
 const searchQuery = ref('')
 const selectedLabel = ref('')
@@ -387,6 +415,13 @@ const propertyPermissions = ref({})
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
+
+// 计算选中标签的显示名称
+const selectedLabelDisplayName = computed(() => {
+  if (!selectedLabel.value) return ''
+  const label = availableLabels.value.find(l => l.neo4j_name === selectedLabel.value)
+  return label ? (label.display_name || label.neo4j_name) : selectedLabel.value
+})
 
 // 节点编辑对话框
 const nodeDialog = reactive({
@@ -411,10 +446,16 @@ const goHome = () => {
   router.push('/dashboard')
 }
 
+// 选择标签
+const selectLabel = (labelName) => {
+  selectedLabel.value = labelName
+  // 清空之前的结果
+  clearResults()
+}
+
 const clearResults = () => {
   results.value = []
   searched.value = false
-  searchQuery.value = ''
   selectedNode.value = null
   showingRelationships.value = false
   relationshipData.value = null
@@ -425,8 +466,8 @@ const clearResults = () => {
 }
 
 const performSearch = async () => {
-  if (!searchQuery.value.trim()) {
-    ElMessage.warning('请输入搜索关键词')
+  if (!selectedLabel.value) {
+    ElMessage.warning('请选择节点标签')
     return
   }
 
@@ -435,8 +476,8 @@ const performSearch = async () => {
 
   try {
     const response = await apiService.searchNodes(
-      searchQuery.value.trim(),
-      selectedLabel.value || null,
+      searchQuery.value.trim() || null,
+      selectedLabel.value,
       limit.value
     )
     
@@ -1051,49 +1092,136 @@ const isUrl = (str) => {
 
 // 加载可用标签
 const loadAvailableLabels = async () => {
+  loadingLabels.value = true
   try {
-    const response = await apiService.getLabelMappings('node')
-    availableLabels.value = response.node_labels || []
+    // 首先尝试使用新的标签映射API
+    const mappingResponse = await apiService.getLabelMappings('node')
+    const nodeMappings = mappingResponse.node_labels || []
     
-    // 同时加载每个标签的属性权限
-    for (const label of availableLabels.value) {
-      await loadPropertyPermissions(label.id)
+    if (nodeMappings.length > 0) {
+      // 使用映射数据，但需要获取计数信息
+      try {
+        // 使用新的节点类型API获取数量
+        const nodeTypesResponse = await apiService.getNodeTypes()
+        const countMap = {}
+        if (nodeTypesResponse.node_types) {
+          nodeTypesResponse.node_types.forEach(item => {
+            countMap[item.label] = item.count
+          })
+        }
+        
+        availableLabels.value = nodeMappings.map(mapping => ({
+          id: mapping.id,
+          neo4j_name: mapping.neo4j_name,
+          display_name: mapping.display_name,
+          count: countMap[mapping.neo4j_name] || 0,
+          description: mapping.description
+        }))
+        
+        // 同时加载每个节点标签的属性权限
+        for (const mapping of nodeMappings) {
+          await loadPropertyPermissions(mapping.id)
+        }
+      } catch (countError) {
+        console.error('获取节点数量失败，尝试使用旧接口:', countError)
+        // 如果新接口失败，尝试使用旧的labels接口
+        try {
+          const countResponse = await apiService.getAllLabels()
+          const countMap = {}
+          if (countResponse.labels_with_counts) {
+            countResponse.labels_with_counts.forEach(item => {
+              countMap[item.label] = item.count
+            })
+          }
+          
+          availableLabels.value = nodeMappings.map(mapping => ({
+            id: mapping.id,
+            neo4j_name: mapping.neo4j_name,
+            display_name: mapping.display_name,
+            count: countMap[mapping.neo4j_name] || 0,
+            description: mapping.description
+          }))
+        } catch (fallbackError) {
+          // 如果获取计数失败，使用映射数据但不显示计数
+          availableLabels.value = nodeMappings.map(mapping => ({
+            id: mapping.id,
+            neo4j_name: mapping.neo4j_name,
+            display_name: mapping.display_name,
+            count: 0,
+            description: mapping.description
+          }))
+        }
+        
+        // 即使计数失败，也要加载属性权限
+        for (const mapping of nodeMappings) {
+          await loadPropertyPermissions(mapping.id)
+        }
+      }
+    } else {
+      // 如果没有映射数据，直接使用节点类型API
+      try {
+        const nodeTypesResponse = await apiService.getNodeTypes()
+        if (nodeTypesResponse.node_types) {
+          availableLabels.value = nodeTypesResponse.node_types.map(item => ({
+            neo4j_name: item.label,
+            display_name: item.label,
+            count: item.count,
+            description: null
+          }))
+        } else {
+          throw new Error('节点类型数据为空')
+        }
+      } catch (nodeTypesError) {
+        console.error('获取节点类型失败，使用原始API:', nodeTypesError)
+        // 后备方案：使用原始API
+        const response = await apiService.getAllLabels()
+        if (response.labels_with_counts) {
+          availableLabels.value = response.labels_with_counts.map(item => ({
+            neo4j_name: item.label,
+            display_name: item.label,
+            count: item.count,
+            description: null
+          }))
+        } else {
+          availableLabels.value = (response.labels || []).map(label => ({
+            neo4j_name: label,
+            display_name: label,
+            count: 0,
+            description: null
+          }))
+        }
+      }
     }
+    
+    ElMessage.success(`加载了 ${availableLabels.value.length} 种节点标签`)
   } catch (error) {
-    console.error('加载标签失败:', error)
-    // 如果新API失败，尝试使用旧API作为后备
-    try {
-      const fallbackResponse = await apiService.getAllLabels()
-      availableLabels.value = (fallbackResponse.labels || []).map(label => ({
-        neo4j_name: label,
-        display_name: label,
-        description: null
-      }))
-    } catch (fallbackError) {
-      console.error('加载标签失败（后备方案）:', fallbackError)
-    }
+    console.error('加载节点标签失败:', error)
+    ElMessage.error('加载节点标签失败')
+    availableLabels.value = []
+  } finally {
+    loadingLabels.value = false
   }
 }
 
-// 加载属性权限映射
+// 加载标签属性映射
 const loadPropertyPermissions = async (labelMappingId) => {
   try {
     const response = await apiService.getPropertyPermissions(labelMappingId)
-    const permissions = response.properties || []
+    const properties = response.properties || []
     
-    // 创建属性键到权限信息的映射
-    const permissionMap = {}
-    permissions.forEach(prop => {
-      permissionMap[prop.property_key] = {
+    // 创建属性键到显示信息的映射
+    const propertyMap = {}
+    properties.forEach(prop => {
+      propertyMap[prop.property_key] = {
         display_name: prop.display_name,
-        can_view: prop.can_view,
-        can_edit: prop.can_edit
+        can_view: prop.can_view,  // 基于标签权限的查看权限
+        can_edit: prop.can_edit   // 基于标签权限的编辑权限
       }
     })
     
-    propertyPermissions.value[labelMappingId] = permissionMap
+    propertyPermissions.value[labelMappingId] = propertyMap
   } catch (error) {
-    console.error(`加载标签 ${labelMappingId} 的属性权限失败:`, error)
+    console.error(`加载标签 ${labelMappingId} 的属性信息失败:`, error)
   }
 }
 
@@ -1152,6 +1280,59 @@ const getVisibleProperties = (node) => {
   return visibleProps
 }
 
+// 检查用户是否有编辑节点的权限
+const canEditNode = (node) => {
+  if (!node || !node.labels || node.labels.length === 0) {
+    return false
+  }
+  
+  // 管理员拥有所有权限
+  if (isAdmin.value) {
+    return true
+  }
+  
+  // 查找匹配的标签映射
+  const matchingLabel = availableLabels.value.find(label => 
+    node.labels.includes(label.neo4j_name)
+  )
+  
+  if (matchingLabel && propertyPermissions.value[matchingLabel.id]) {
+    // 检查是否有编辑权限（通过属性权限中的can_edit字段判断）
+    const permissions = propertyPermissions.value[matchingLabel.id]
+    const firstProperty = Object.values(permissions)[0]
+    return firstProperty ? firstProperty.can_edit : false
+  }
+  
+  return false
+}
+
+// 检查用户是否有删除节点的权限
+const canDeleteNode = (node) => {
+  // 删除权限通常比编辑权限更严格，这里与编辑权限保持一致
+  return canEditNode(node)
+}
+
+// 检查用户是否有创建节点的权限
+const canCreateNode = () => {
+  // 管理员拥有所有权限
+  if (isAdmin.value) {
+    return true
+  }
+  
+  // 检查用户是否对任何标签有创建权限
+  for (const label of availableLabels.value) {
+    if (propertyPermissions.value[label.id]) {
+      const permissions = propertyPermissions.value[label.id]
+      const firstProperty = Object.values(permissions)[0]
+      if (firstProperty && firstProperty.can_edit) {
+        return true
+      }
+    }
+  }
+  
+  return false
+}
+
 onMounted(() => {
   loadAvailableLabels()
 })
@@ -1167,91 +1348,111 @@ onMounted(() => {
   align-items: center;
 }
 
-/* 页面头部 */
-.page-header {
+/* 节点标签选择区域 */
+.node-labels-section {
+  margin-bottom: 24px;
+  width: 100%;
+  max-width: 1200px;
+}
+
+.labels-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 20px;
   padding: 32px;
-  margin-bottom: 24px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   width: 100%;
-  max-width: 1200px;
 }
 
-.header-content {
+.labels-header {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.labels-content {
+  width: 100%;
+}
+
+.labels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.label-card {
+  background: rgba(248, 250, 252, 0.8);
+  border: 2px solid #e8ecf0;
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.label-card:hover {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 0.9);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.2);
+}
+
+.label-card.active {
+  border-color: #667eea;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.label-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 12px;
 }
 
-.title-section {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+.label-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #2c3e50;
 }
 
-.page-icon {
-  width: 60px;
-  height: 60px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border-radius: 16px;
+.label-count {
+  font-size: 14px;
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.label-description {
+  font-size: 14px;
+  color: #7f8c8d;
+  line-height: 1.4;
+}
+
+.loading-labels {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-}
-
-.page-icon .icon {
-  font-size: 28px;
-  color: white;
-}
-
-.page-title {
-  font-size: 32px;
-  font-weight: 700;
-  color: #2c3e50;
-  margin: 0 0 8px 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.page-subtitle {
-  font-size: 16px;
-  color: #7f8c8d;
-  margin: 0;
-  font-weight: 400;
-}
-
-.header-actions {
-  display: flex;
   gap: 12px;
+  padding: 40px;
+  color: #7f8c8d;
 }
 
-.action-btn {
-  height: 48px;
-  padding: 0 24px;
-  border-radius: 12px;
-  font-weight: 600;
-  transition: all 0.3s ease;
+.no-labels {
+  padding: 40px;
 }
 
-.action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-}
-
-/* 搜索区域 */
-.search-section {
+/* 查询参数设置区域 */
+.query-params-section {
   margin-bottom: 24px;
   width: 100%;
   max-width: 900px;
 }
 
-.search-card {
+.params-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -1261,9 +1462,86 @@ onMounted(() => {
   width: 100%;
 }
 
-.search-header {
+.params-header {
   margin-bottom: 24px;
   text-align: center;
+}
+
+.params-form {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.param-group {
+  margin-bottom: 24px;
+}
+
+.param-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param-input {
+  width: 100%;
+}
+
+.param-input :deep(.el-input-number) {
+  width: 100%;
+}
+
+.param-input :deep(.el-input__wrapper) {
+  border-radius: 12px;
+  border: 2px solid #e8ecf0;
+  background: rgba(248, 250, 252, 0.8);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.param-input :deep(.el-input__wrapper:hover) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.param-input :deep(.el-input__wrapper.is-focus) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+.param-input :deep(.el-input__inner) {
+  font-size: 14px;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.param-input :deep(.el-input__inner::placeholder) {
+  color: #a0a7b0;
+  font-weight: 400;
+}
+
+.param-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.query-btn {
+  height: 48px;
+  padding: 0 32px;
+  border-radius: 12px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.query-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
 }
 
 .section-title {
@@ -1283,101 +1561,17 @@ onMounted(() => {
   margin: 0;
 }
 
-.search-form {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.input-group {
-  margin-bottom: 24px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.search-input-wrapper {
-  flex: 1;
-  position: relative;
-}
-
-.search-input :deep(.el-input__wrapper) {
-  border-radius: 12px;
-  border: 2px solid #e8ecf0;
-  background: rgba(248, 250, 252, 0.8);
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-  box-shadow: none;
-}
-
-.search-input :deep(.el-input__wrapper:hover) {
-  border-color: #667eea;
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.search-input :deep(.el-input__wrapper.is-focus) {
-  border-color: #667eea;
-  background: rgba(255, 255, 255, 1);
-  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
-}
-
-.search-btn {
+.action-btn {
   height: 48px;
   padding: 0 24px;
   border-radius: 12px;
   font-weight: 600;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  border: none;
   transition: all 0.3s ease;
 }
 
-.search-btn:hover {
+.action-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-}
-
-.search-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
-}
-
-.option-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.option-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #2c3e50;
-}
-
-.option-select,
-.option-number {
-  width: 100%;
-}
-
-.option-select :deep(.el-input__wrapper),
-.option-number :deep(.el-input__wrapper) {
-  border-radius: 12px;
-  border: 2px solid #e8ecf0;
-  background: rgba(248, 250, 252, 0.8);
-  backdrop-filter: blur(10px);
-  transition: all 0.3s ease;
-}
-
-.option-select :deep(.el-input__wrapper:hover),
-.option-number :deep(.el-input__wrapper:hover) {
-  border-color: #667eea;
-  background: rgba(255, 255, 255, 0.9);
-}
-
-.option-select :deep(.el-input__wrapper.is-focus),
-.option-number :deep(.el-input__wrapper.is-focus) {
-  border-color: #667eea;
-  background: rgba(255, 255, 255, 1);
-  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
 }
 
 /* 结果区域 */
@@ -1547,7 +1741,8 @@ onMounted(() => {
   padding-top: 20px;
 }
 
-.properties-title {
+.properties-title,
+.operations-title {
   font-size: 14px;
   font-weight: 600;
   color: #2c3e50;
@@ -1599,8 +1794,11 @@ onMounted(() => {
 /* 管理员操作按钮 */
 .panel-actions {
   margin-top: 20px;
+  margin-bottom: 20px;
   padding-top: 16px;
+  padding-bottom: 16px;
   border-top: 1px solid #ebeef5;
+  border-bottom: 1px solid #ebeef5;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -1609,6 +1807,16 @@ onMounted(() => {
 .panel-actions .action-btn {
   flex: 1;
   min-width: 100px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.panel-actions .action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .admin-actions {
@@ -1699,22 +1907,7 @@ onMounted(() => {
     padding: 16px;
   }
   
-  .header-content {
-    flex-direction: column;
-    gap: 20px;
-    text-align: center;
-  }
-  
-  .title-section {
-    flex-direction: column;
-    gap: 16px;
-  }
-  
-  .page-title {
-    font-size: 24px;
-  }
-  
-  .search-options {
+  .labels-grid {
     grid-template-columns: 1fr;
   }
   

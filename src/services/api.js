@@ -1,6 +1,6 @@
 // API服务 - 调用后端REST API
-const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
-// const API_BASE_URL = 'http://localhost:8000/api'
+// const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
+const API_BASE_URL = 'http://localhost:8000/api'
 
 class ApiService {
   constructor() {
@@ -144,6 +144,10 @@ class ApiService {
 
   async getRelationshipTypes() {
     return this.get('/relationship-types')
+  }
+
+  async getNodeTypes() {
+    return this.get('/node-types')
   }
 
   // 自定义查询API

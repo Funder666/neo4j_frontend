@@ -162,10 +162,16 @@ const getUserRoleText = (role) => {
   switch (role) {
     case 'admin':
       return '管理员'
-    case 'user':
-      return '普通用户'
+    case 'user1':
+      return '用户1'
+    case 'user2':
+      return '用户2'
+    case 'user3':
+      return '用户3'
+    case 'user4':
+      return '用户4'
     default:
-      return '用户'
+      return role || '用户'  // 直接显示角色名称，支持未来扩展
   }
 }
 

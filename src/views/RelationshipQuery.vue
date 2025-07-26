@@ -57,7 +57,7 @@
             </div>
             
             <div v-else class="no-types">
-              <el-empty description="暂无关系数据">
+              <el-empty description="您没有权限查看任何关系类型">
                 <template #image>
                   <div class="empty-icon">
                     <el-icon><Share /></el-icon>
@@ -204,6 +204,31 @@
                     </div>
                   </div>
                   
+                  <!-- 节点操作区域 -->
+                  <div v-if="isAdmin" class="node-operations">
+                    <h5 class="operations-title">操作</h5>
+                    <div class="panel-actions">
+                      <el-button 
+                        type="primary" 
+                        size="small"
+                        class="action-btn"
+                        @click="editNode(selectedElement.data)"
+                      >
+                        <el-icon><Edit /></el-icon>
+                        编辑节点
+                      </el-button>
+                      <el-button 
+                        type="danger" 
+                        size="small"
+                        class="action-btn"
+                        @click="deleteNode(selectedElement.data)"
+                      >
+                        <el-icon><Delete /></el-icon>
+                        删除节点
+                      </el-button>
+                    </div>
+                  </div>
+                  
                   <div class="element-properties">
                     <h5 class="properties-title">属性</h5>
                     <div class="properties-list">
@@ -224,26 +249,6 @@
                         </div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <!-- 管理员操作按钮 -->
-                  <div v-if="isAdmin" class="panel-actions">
-                    <el-button 
-                      type="primary" 
-                      size="small"
-                      @click="editNode(selectedElement.data)"
-                    >
-                      <el-icon><Edit /></el-icon>
-                      编辑节点
-                    </el-button>
-                    <el-button 
-                      type="danger" 
-                      size="small"
-                      @click="deleteNode(selectedElement.data)"
-                    >
-                      <el-icon><Delete /></el-icon>
-                      删除节点
-                    </el-button>
                   </div>
                 </div>
                 
@@ -266,6 +271,31 @@
                     </div>
                   </div>
                   
+                  <!-- 关系操作区域 -->
+                  <div v-if="isAdmin" class="relationship-operations">
+                    <h5 class="operations-title">操作</h5>
+                    <div class="panel-actions">
+                      <el-button 
+                        type="primary" 
+                        size="small"
+                        class="action-btn"
+                        @click="editRelationship(selectedElement.data)"
+                      >
+                        <el-icon><Edit /></el-icon>
+                        编辑关系
+                      </el-button>
+                      <el-button 
+                        type="danger" 
+                        size="small"
+                        class="action-btn"
+                        @click="deleteRelationship(selectedElement.data)"
+                      >
+                        <el-icon><Delete /></el-icon>
+                        删除关系
+                      </el-button>
+                    </div>
+                  </div>
+                  
                   <div class="element-properties" v-if="Object.keys(getVisibleProperties(selectedElement.data, selectedElement.type)).length > 0">
                     <h5 class="properties-title">属性</h5>
                     <div class="properties-list">
@@ -278,26 +308,6 @@
                         <div class="property-val">{{ formatProperty(value) }}</div>
                       </div>
                     </div>
-                  </div>
-                  
-                  <!-- 关系管理员操作按钮 -->
-                  <div v-if="isAdmin" class="panel-actions">
-                    <el-button 
-                      type="primary" 
-                      size="small"
-                      @click="editRelationship(selectedElement.data)"
-                    >
-                      <el-icon><Edit /></el-icon>
-                      编辑关系
-                    </el-button>
-                    <el-button 
-                      type="danger" 
-                      size="small"
-                      @click="deleteRelationship(selectedElement.data)"
-                    >
-                      <el-icon><Delete /></el-icon>
-                      删除关系
-                    </el-button>
                   </div>
                 </div>
               </div>
@@ -518,19 +528,14 @@ const loadRelationshipTypes = async () => {
         }
       }
     } else {
-      // 如果没有映射数据，使用原始API
-      const response = await apiService.getRelationshipTypes()
-      relationshipTypes.value = response.relationship_types.map(item => ({
-        type: item.type,
-        display_name: item.type,
-        count: item.count,
-        description: null,
-        icon: null,
-        color: null
-      }))
+      // 如果没有映射数据，说明用户没有任何关系权限
+      relationshipTypes.value = []
+      ElMessage.info('您没有权限查看任何关系类型')
     }
     
-    ElMessage.success(`加载了 ${relationshipTypes.value.length} 种关系类型`)
+    if (relationshipTypes.value.length > 0) {
+      ElMessage.success(`加载了 ${relationshipTypes.value.length} 种关系类型`)
+    }
   } catch (error) {
     console.error('加载关系类型失败:', error)
     ElMessage.error('加载关系类型失败')
@@ -1069,25 +1074,25 @@ const loadAvailableLabels = async () => {
   }
 }
 
-// 加载属性权限映射
+// 加载标签属性映射
 const loadPropertyPermissions = async (labelMappingId) => {
   try {
     const response = await apiService.getPropertyPermissions(labelMappingId)
-    const permissions = response.properties || []
+    const properties = response.properties || []
     
-    // 创建属性键到权限信息的映射
-    const permissionMap = {}
-    permissions.forEach(prop => {
-      permissionMap[prop.property_key] = {
+    // 创建属性键到显示信息的映射
+    const propertyMap = {}
+    properties.forEach(prop => {
+      propertyMap[prop.property_key] = {
         display_name: prop.display_name,
-        can_view: prop.can_view,
-        can_edit: prop.can_edit
+        can_view: prop.can_view,  // 基于标签权限的查看权限
+        can_edit: prop.can_edit   // 基于标签权限的编辑权限
       }
     })
     
-    propertyPermissions.value[labelMappingId] = permissionMap
+    propertyPermissions.value[labelMappingId] = propertyMap
   } catch (error) {
-    console.error(`加载标签 ${labelMappingId} 的属性权限失败:`, error)
+    console.error(`加载标签 ${labelMappingId} 的属性信息失败:`, error)
   }
 }
 
@@ -1673,7 +1678,8 @@ onMounted(() => {
   padding-top: 20px;
 }
 
-.properties-title {
+.properties-title,
+.operations-title {
   font-size: 14px;
   font-weight: 600;
   color: #2c3e50;
@@ -1777,11 +1783,29 @@ onMounted(() => {
 /* 管理员操作按钮 */
 .panel-actions {
   margin-top: 20px;
+  margin-bottom: 20px;
   padding-top: 16px;
+  padding-bottom: 16px;
   border-top: 1px solid #ebeef5;
+  border-bottom: 1px solid #ebeef5;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.panel-actions .action-btn {
+  flex: 1;
+  min-width: 100px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.panel-actions .action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .panel-actions .el-button {
