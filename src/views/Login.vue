@@ -44,7 +44,7 @@
             </svg>
           </div>
         </div>
-        <h1 class="title">国际中文图数据库系统</h1>
+        <h1 class="title">国际中文教育知识图谱</h1>
         <p class="subtitle">图数据库可视化管理平台</p>
       </div>
       
@@ -118,7 +118,7 @@
 
     <!-- 底部信息 -->
     <div class="footer-info">
-      <p>© 2024 Neo4j Management System - 专业的图数据库管理平台</p>
+      <p>2025 主办单位: 中外语言交流合作中心 华东师范大学</p>
     </div>
   </div>
 </template>

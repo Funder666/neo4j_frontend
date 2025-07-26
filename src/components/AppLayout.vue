@@ -23,8 +23,8 @@
               </svg>
             </div>
             <div class="app-title">
-              <h1>国际中文图数据库系统</h1>
-              <span class="subtitle">图数据库可视化平台</span>
+              <h1>国际中文教育知识图谱</h1>
+              <span class="subtitle">国际中文教育知识图谱</span>
             </div>
           </div>
         </div>

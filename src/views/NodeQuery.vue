@@ -621,6 +621,36 @@ const darkenColor = (color, factor) => {
   return color // 简化实现
 }
 
+// 关系类型颜色映射
+const getRelationshipColor = (relationshipType) => {
+  const colors = {
+    'HAS_PINYIN': '#FF6B6B',        // 红色 - 汉字与拼音
+    'HAS_RADICAL': '#4ECDC4',       // 青色 - 汉字与部首
+    'SYNONYM': '#45B7D1',           // 蓝色 - 近义词
+    'ANTONYM': '#96CEB4',           // 绿色 - 反义词
+    'DEPENDS_ON': '#F7DC6F',        // 黄色 - 学习依赖
+    'CONTAINS': '#BB8FCE',          // 紫色 - 包含关系
+    'RELATES_TO': '#F8C471',        // 橙色 - 相关关系
+    'default': '#667eea'            // 默认蓝紫色
+  }
+  return colors[relationshipType] || colors.default
+}
+
+// 关系类型高亮颜色
+const getRelationshipHighlightColor = (relationshipType) => {
+  const highlightColors = {
+    'HAS_PINYIN': '#E74C3C',        // 深红色
+    'HAS_RADICAL': '#17A2B8',       // 深青色
+    'SYNONYM': '#3498DB',           // 深蓝色
+    'ANTONYM': '#28A745',           // 深绿色
+    'DEPENDS_ON': '#F1C40F',        // 深黄色
+    'CONTAINS': '#8E44AD',          // 深紫色
+    'RELATES_TO': '#E67E22',        // 深橙色
+    'default': '#764ba2'            // 默认深蓝紫色
+  }
+  return highlightColors[relationshipType] || highlightColors.default
+}
+
 const exportResults = () => {
   const dataStr = JSON.stringify(results.value, null, 2)
   const dataBlob = new Blob([dataStr], { type: 'application/json' })
@@ -846,8 +876,9 @@ const createRelationshipNetwork = (centerNode, relationships) => {
   })
 
   // 处理关系并添加相关节点 - 根据RelationshipQuery.vue的数据结构
+  console.log('All relationships to process:', relationships)
   relationships.forEach((record, index) => {
-    console.log('Processing relationship record:', record)
+    console.log('Processing relationship record:', index, record)
     
     // 检查record的结构，API可能返回类似 {n, r, m} 的格式
     let startNode, relationship, endNode
@@ -942,7 +973,18 @@ const createRelationshipNetwork = (centerNode, relationships) => {
     }
 
     // 添加边
+    console.log('Checking edge creation conditions:', {
+      hasRelationship: !!relationship,
+      hasStartNode: !!startNode,
+      hasEndNode: !!endNode,
+      relationshipType: relationship?.type
+    })
+    
     if (relationship && startNode && endNode) {
+      const edgeColor = getRelationshipColor(relationship.type)
+      const highlightColor = getRelationshipHighlightColor(relationship.type)
+      console.log(`Setting edge color for ${relationship.type}: ${edgeColor}`)
+      
       edges.push({
         id: relationship.id || `edge_${index}`,
         from: startNode.id,
@@ -950,8 +992,8 @@ const createRelationshipNetwork = (centerNode, relationships) => {
         label: relationship.type,
         title: `关系类型: ${relationship.type}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
         color: {
-          color: '#667eea',
-          highlight: '#764ba2'
+          color: edgeColor,
+          highlight: highlightColor
         },
         font: {
           color: '#2c3e50',
@@ -962,9 +1004,11 @@ const createRelationshipNetwork = (centerNode, relationships) => {
         arrows: {
           to: {
             enabled: true,
-            scaleFactor: 1.2
+            scaleFactor: 1.2,
+            type: 'arrow'
           }
         },
+        arrowStrikethrough: false,
         smooth: {
           enabled: true,
           type: 'dynamic',
@@ -1008,7 +1052,11 @@ const createRelationshipNetwork = (centerNode, relationships) => {
     },
     edges: {
       arrows: {
-        to: { enabled: true, scaleFactor: 1.2 }
+        to: { 
+          enabled: true, 
+          scaleFactor: 1.2,
+          type: 'arrow'
+        }
       },
       smooth: {
         enabled: true,
@@ -1020,7 +1068,8 @@ const createRelationshipNetwork = (centerNode, relationships) => {
         size: 12,
         strokeWidth: 2,
         strokeColor: '#ffffff'
-      }
+      },
+      width: 2
     },
     interaction: {
       hover: true,
