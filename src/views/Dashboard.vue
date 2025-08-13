@@ -21,7 +21,7 @@ src/views/Dashboard.vue<template>
           <!-- 汉字节点示例 -->
           <div class="example-section">
             <div class="section-header">
-              <h3>汉字知识图谱示例</h3>
+<!--              <h3>汉字知识图谱示例</h3>-->
             </div>
             
             <div class="example-grid">
@@ -29,7 +29,7 @@ src/views/Dashboard.vue<template>
                 <div class="example-header">
                   <h4>
                     <el-icon><Collection /></el-icon>
-                    汉字节点网络
+                    示例：汉字节点网络
                   </h4>
                   <div class="node-count-badge">
                     {{ characterResults.length }} 个节点
