@@ -1,4 +1,4 @@
-<template>
+src/views/Dashboard.vue<template>
   <AppLayout>
     <div class="dashboard-container">
           <!-- 欢迎横幅 -->
@@ -18,45 +18,101 @@
           </div>
 
 
-          <!-- 系统状态面板 -->
-          <div class="system-section">
+          <!-- 汉字节点示例 -->
+          <div class="example-section">
             <div class="section-header">
-              <h3>系统状态</h3>
-              <p>监控数据库连接和系统运行状态</p>
+              <h3>汉字知识图谱示例</h3>
             </div>
             
-            <div class="system-grid">
-              <div class="system-card">
-                <div class="system-header">
-                  <h4>数据库连接</h4>
-                  <div class="connection-badge" :class="getStatusClass()">
-                    {{ connectionStatus }}
+            <div class="example-grid">
+              <div class="example-card">
+                <div class="example-header">
+                  <h4>
+                    <el-icon><Collection /></el-icon>
+                    汉字节点网络
+                  </h4>
+                  <div class="node-count-badge">
+                    {{ characterResults.length }} 个节点
                   </div>
                 </div>
-                <div class="system-content">
-                  <div class="connection-details">
-                    <div class="detail-item">
-                      <span class="label">服务器地址:</span>
-                      <span class="value">bolt://8.153.207.172:7687</span>
-                    </div>
-                    <div class="detail-item">
-                      <span class="label">用户名:</span>
-                      <span class="value">{{ currentUser?.username }}</span>
-                    </div>
-                    <div class="detail-item">
-                      <span class="label">连接时间:</span>
-                      <span class="value">{{ formatTime(currentUser?.loginTime) }}</span>
+                <div class="example-content">
+                  <!-- 图形可视化区域 -->
+                  <div class="graph-container">
+                    <div ref="exampleNetworkContainer" class="example-network-container"></div>
+                    
+                    <!-- 选中节点信息面板 -->
+                    <div v-if="selectedExampleNode" class="example-node-info-panel">
+                      <div class="example-panel-header">
+                        <h5 class="example-panel-title">
+                          <el-icon><InfoFilled /></el-icon>
+                          节点信息
+                        </h5>
+                        <el-button type="text" @click="selectedExampleNode = null" class="close-btn">
+                          <el-icon><Close /></el-icon>
+                        </el-button>
+                      </div>
+                      <div class="example-panel-content">
+                        <div class="example-node-basic-info">
+                          <div class="info-item">
+                            <span class="info-label">ID:</span>
+                            <span class="info-value">{{ selectedExampleNode.id }}</span>
+                          </div>
+                          <div class="info-item">
+                            <span class="info-label">标签:</span>
+                            <div class="info-labels">
+                              <el-tag
+                                v-for="label in selectedExampleNode.labels"
+                                :key="label"
+                                type="info"
+                                effect="light"
+                                class="node-label-tag"
+                              >
+                                {{ label }}
+                              </el-tag>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- 节点操作区域（只有查看关系） -->
+                        <div class="example-node-operations">
+                          <h6 class="operations-title">操作</h6>
+                          <div class="example-panel-actions">
+                            <el-button 
+                              type="success" 
+                              size="small"
+                              class="action-btn"
+                              @click="showExampleNodeRelationships(selectedExampleNode)"
+                            >
+                              <el-icon><Share /></el-icon>
+                              查看关系
+                            </el-button>
+                          </div>
+                        </div>
+                        
+                        <div class="example-node-properties">
+                          <h6 class="properties-title">属性</h6>
+                          <div class="properties-list">
+                            <div 
+                              v-for="(value, key) in selectedExampleNode.properties"
+                              :key="key"
+                              class="property-row"
+                            >
+                              <div class="property-name">{{ key }}</div>
+                              <div class="property-val">{{ formatProperty(value) }}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div class="action-buttons">
-                    <el-button size="small" @click="testConnection" :loading="testing" type="primary">
-                      <el-icon><Connection /></el-icon>
-                      测试连接
-                    </el-button>
-                    <el-button size="small" @click="reconnect" :loading="reconnecting">
-                      <el-icon><Refresh /></el-icon>
-                      重新连接
-                    </el-button>
+                  
+                  <div v-if="exampleLoading" class="loading-example">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                    <span>正在加载汉字节点示例...</span>
+                  </div>
+                  
+                  <div v-else-if="!characterResults.length" class="empty-example">
+                    <div class="empty-message">暂无汉字节点数据</div>
                   </div>
                 </div>
               </div>
@@ -67,110 +123,486 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import {
-  User,
-  ArrowDown,
-  House,
   Search,
   Share,
-  Setting,
-  SwitchButton,
-  Connection,
-  Refresh
+  Collection,
+  InfoFilled,
+  Close,
+  Loading
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
 import apiService from '../services/api'
 import AppLayout from '../components/AppLayout.vue'
+import { Network } from 'vis-network'
 
-const route = useRoute()
 const router = useRouter()
 
 const currentUser = ref(authService.getCurrentUser())
-const connectionStatus = ref('检查中...')
-const testing = ref(false)
-const reconnecting = ref(false)
-// 这些函数现在由 AppLayout 组件处理
+
+// 汉字示例相关变量
+const characterResults = ref([])
+const selectedExampleNode = ref(null)
+const exampleLoading = ref(false)
+const exampleNetworkContainer = ref(null)
+const exampleNetwork = ref(null)
 
 onMounted(async () => {
-  // 初始化连接状态检查
-  await checkConnectionStatus()
+  // 页面加载完成后自动加载汉字示例
+  await loadCharacterExample()
 })
 
-const checkConnectionStatus = async () => {
+// 加载汉字节点示例
+const loadCharacterExample = async () => {
+  exampleLoading.value = true
+  
   try {
-    const isConnected = await apiService.isConnected()
-    if (isConnected) {
-      connectionStatus.value = '连接正常'
-    } else {
-      connectionStatus.value = '连接断开'
+    // 尝试多种方法获取Character节点
+    let response
+    try {
+      // 首先尝试使用getNodes方法
+      response = await apiService.getNodes(25, 'Character', 0)
+    } catch (error) {
+      console.log('getNodes方法失败，尝试直接查询:', error)
+      // 如果失败，使用直接的Cypher查询
+      response = await apiService.runQuery('MATCH (n:Character) RETURN n LIMIT 25', {})
     }
-  } catch (error) {
-    console.error('检查连接状态失败:', error)
-    connectionStatus.value = '连接异常'
-  }
-}
-
-const testConnection = async () => {
-  testing.value = true
-  try {
-    const isConnected = await apiService.isConnected()
-    if (isConnected) {
-      ElMessage.success('连接正常')
-      connectionStatus.value = '连接正常'
-    } else {
-      ElMessage.warning('连接已断开')
-      connectionStatus.value = '连接断开'
-    }
-  } catch (error) {
-    console.error('测试连接失败:', error)
-    ElMessage.error('连接测试失败')
-    connectionStatus.value = '连接失败'
-  } finally {
-    testing.value = false
-  }
-}
-
-const reconnect = async () => {
-  reconnecting.value = true
-  try {
-    connectionStatus.value = '重连中...'
-    const connected = await apiService.connect()
     
-    if (connected) {
-      ElMessage.success('重新连接成功')
-      connectionStatus.value = '已连接'
+    // 处理不同的响应格式
+    let nodes = []
+    if (response.nodes) {
+      nodes = response.nodes
+    } else if (response.records) {
+      nodes = response.records.map(record => record.n || record)
+    } else if (Array.isArray(response)) {
+      nodes = response
+    }
+    
+    characterResults.value = nodes
+    
+    if (characterResults.value.length === 0) {
+      ElMessage.info('未找到汉字节点')
     } else {
-      ElMessage.error('重新连接失败')
-      connectionStatus.value = '连接失败'
+      ElMessage.success(`加载了 ${characterResults.value.length} 个汉字节点`)
+      // 创建图形可视化
+      setTimeout(() => {
+        createExampleNetwork()
+      }, 100)
     }
   } catch (error) {
-    console.error('重新连接失败:', error)
-    ElMessage.error('重新连接失败')
-    connectionStatus.value = '连接失败'
+    console.error('加载汉字示例失败:', error)
+    ElMessage.error('加载汉字示例失败: ' + error.message)
   } finally {
-    reconnecting.value = false
+    exampleLoading.value = false
   }
 }
 
+// 创建示例网络图
+const createExampleNetwork = () => {
+  if (!exampleNetworkContainer.value || !characterResults.value.length) return
 
-// 格式化时间显示
-const formatTime = (timeStr) => {
-  if (!timeStr) return '-'
-  return new Date(timeStr).toLocaleString()
+  // 清理旧的网络
+  if (exampleNetwork.value) {
+    exampleNetwork.value.destroy()
+  }
+
+  const nodes = characterResults.value.map(record => {
+    const node = record.n || record;
+    return {
+      id: node.id,
+      label: (node.properties && node.properties.name) || (node.properties && node.properties.value ? node.properties.value.trim() : '') || `${node.id}`,
+      group: (node.labels && node.labels[0]) || 'Unknown',
+      title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
+      color: {
+        background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
+        border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
+      },
+      font: { 
+        color: '#2c3e50', 
+        size: 20, 
+        face: 'Arial, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      shape: 'circle',
+      size: 50,
+      data: node
+    }
+  })
+
+  const data = {
+    nodes: nodes,
+    edges: []
+  }
+
+  const options = {
+    nodes: {
+      borderWidth: 3,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.2)',
+        size: 10,
+        x: 2,
+        y: 2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 20,
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      chosen: {
+        node: (values, id, selected, hovering) => {
+          values.shadow = true
+          values.shadowSize = 15
+          values.borderWidth = 4
+        }
+      }
+    },
+    interaction: {
+      hover: true,
+      selectConnectedEdges: false,
+      tooltipDelay: 300
+    },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 100 },
+      barnesHut: {
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: 120,
+        springConstant: 0.04,
+        damping: 0.09
+      }
+    }
+  }
+
+  exampleNetwork.value = new Network(exampleNetworkContainer.value, data, options)
+
+  // 监听节点选择事件
+  exampleNetwork.value.on('selectNode', (params) => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0]
+      const record = characterResults.value.find(record => {
+        const node = record.n || record;
+        return node.id === nodeId
+      })
+      if (record) {
+        selectedExampleNode.value = record.n || record
+      }
+    }
+  })
+
+  // 监听空白区域点击
+  exampleNetwork.value.on('deselectNode', () => {
+    selectedExampleNode.value = null
+  })
 }
 
-// 获取连接状态样式类
-const getStatusClass = () => {
-  if (connectionStatus.value.includes('已连接') || connectionStatus.value.includes('连接正常')) {
-    return 'connected'
+// 节点颜色映射
+const getNodeColor = (label) => {
+  const colors = {
+    'Character': '#FF6B6B',
+    'Word': '#4ECDC4', 
+    'Sentence': '#45B7D1',
+    'ExternalLink': '#96CEB4',
+    'default': '#667eea'
   }
-  if (connectionStatus.value.includes('连接失败') || connectionStatus.value.includes('连接异常')) {
-    return 'disconnected'
+  return colors[label] || colors.default
+}
+
+const darkenColor = (color, factor) => {
+  return color
+}
+
+// 格式化属性值
+const formatProperty = (value) => {
+  if (typeof value === 'object') {
+    return JSON.stringify(value)
   }
-  return 'checking'
+  return String(value)
+}
+
+// 查看示例节点关系
+const showExampleNodeRelationships = async (node) => {
+  try {
+    exampleLoading.value = true
+    
+    const response = await apiService.getNodeRelationships(node.id)
+    
+    let relationships = null
+    if (response.relationships) {
+      relationships = response.relationships
+    } else if (response.records) {
+      relationships = response.records
+    } else if (Array.isArray(response)) {
+      relationships = response
+    }
+    
+    if (!relationships || relationships.length === 0) {
+      ElMessage.info('该节点没有关联的关系')
+      return
+    }
+    
+    // 创建关系图
+    setTimeout(() => {
+      createExampleRelationshipNetwork(node, relationships)
+    }, 100)
+    
+    ElMessage.success(`找到 ${relationships.length} 个关系`)
+  } catch (error) {
+    console.error('获取节点关系失败:', error)
+    ElMessage.error('获取节点关系失败: ' + error.message)
+  } finally {
+    exampleLoading.value = false
+  }
+}
+
+// 创建关系网络图
+const createExampleRelationshipNetwork = (centerNode, relationships) => {
+  if (!exampleNetworkContainer.value) return
+
+  // 清理旧的网络
+  if (exampleNetwork.value) {
+    exampleNetwork.value.destroy()
+  }
+
+  // 构建节点和边数据
+  const nodes = new Map()
+  const edges = []
+
+  // 添加中心节点
+  nodes.set(centerNode.id, {
+    id: centerNode.id,
+    label: (centerNode.properties && centerNode.properties.name) || 
+           (centerNode.properties && centerNode.properties.value ? centerNode.properties.value.trim() : '') || 
+           `节点 ${centerNode.id}`,
+    group: (centerNode.labels && centerNode.labels[0]) || 'Unknown',
+    title: `ID: ${centerNode.id}\n标签: ${centerNode.labels ? centerNode.labels.join(', ') : 'Unknown'}\n属性: ${centerNode.properties ? Object.keys(centerNode.properties).length : 0} 个`,
+    color: {
+      background: '#FF6B6B',
+      border: '#E55654'
+    },
+    font: { 
+      color: '#2c3e50', 
+      size: 24,
+      face: 'Arial, sans-serif',
+      strokeWidth: 2,
+      strokeColor: '#ffffff'
+    },
+    shape: 'circle',
+    size: 80,
+    data: centerNode,
+    borderWidth: 4
+  })
+
+  // 处理关系数据
+  relationships.forEach((record, index) => {
+    let startNode, relationship, endNode
+
+    if (record.n && record.r && record.m) {
+      startNode = record.n
+      relationship = record.r
+      endNode = record.m
+    } else if (record.start_node && record.relationship && record.end_node) {
+      startNode = record.start_node
+      relationship = record.relationship
+      endNode = record.end_node
+    } else {
+      return
+    }
+
+    // 添加起始节点（如果不存在）
+    if (startNode && startNode.id && !nodes.has(startNode.id)) {
+      const nodeLabel = (startNode.properties && startNode.properties.name) || 
+                       (startNode.properties && startNode.properties.value) || 
+                       `节点 ${startNode.id}`
+      nodes.set(startNode.id, {
+        id: startNode.id,
+        label: nodeLabel,
+        group: (startNode.labels && startNode.labels[0]) || 'Unknown',
+        title: `ID: ${startNode.id}\n标签: ${startNode.labels ? startNode.labels.join(', ') : 'Unknown'}`,
+        color: {
+          background: getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'),
+          border: darkenColor(getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'), 0.3)
+        },
+        font: { 
+          color: '#2c3e50', 
+          size: 18, 
+          face: 'Arial, sans-serif',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        shape: 'circle',
+        size: 50,
+        data: startNode
+      })
+    }
+
+    // 添加结束节点（如果不存在）
+    if (endNode && endNode.id && !nodes.has(endNode.id)) {
+      const nodeLabel = (endNode.properties && endNode.properties.name) || 
+                       (endNode.properties && endNode.properties.value) || 
+                       `节点 ${endNode.id}`
+      nodes.set(endNode.id, {
+        id: endNode.id,
+        label: nodeLabel,
+        group: (endNode.labels && endNode.labels[0]) || 'Unknown',
+        title: `ID: ${endNode.id}\n标签: ${endNode.labels ? endNode.labels.join(', ') : 'Unknown'}`,
+        color: {
+          background: getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'),
+          border: darkenColor(getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'), 0.3)
+        },
+        font: { 
+          color: '#2c3e50', 
+          size: 18, 
+          face: 'Arial, sans-serif',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        shape: 'circle',
+        size: 50,
+        data: endNode
+      })
+    }
+
+    // 添加边
+    if (relationship && startNode && endNode) {
+      const edgeColor = getRelationshipColor(relationship.type)
+      
+      edges.push({
+        id: relationship.id || `edge_${index}`,
+        from: startNode.id,
+        to: endNode.id,
+        label: relationship.type,
+        title: `关系类型: ${relationship.type}`,
+        color: {
+          color: edgeColor,
+          highlight: edgeColor
+        },
+        font: {
+          color: '#2c3e50',
+          size: 14,
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        arrows: {
+          to: {
+            enabled: true,
+            scaleFactor: 1.2,
+            type: 'arrow'
+          }
+        },
+        arrowStrikethrough: false,
+        smooth: {
+          enabled: true,
+          type: 'dynamic',
+          roundness: 0.2
+        },
+        width: 2,
+        data: relationship
+      })
+    }
+  })
+
+  const data = {
+    nodes: Array.from(nodes.values()),
+    edges: edges
+  }
+
+  const options = {
+    nodes: {
+      borderWidth: 3,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.2)',
+        size: 10,
+        x: 2,
+        y: 2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 18,
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      }
+    },
+    edges: {
+      arrows: {
+        to: { 
+          enabled: true, 
+          scaleFactor: 1.2,
+          type: 'arrow'
+        }
+      },
+      smooth: {
+        enabled: true,
+        type: 'dynamic',
+        roundness: 0.2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 12,
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      width: 2
+    },
+    interaction: {
+      hover: true,
+      selectConnectedEdges: true,
+      tooltipDelay: 300
+    },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 200 },
+      barnesHut: {
+        gravitationalConstant: -3000,
+        centralGravity: 0.5,
+        springLength: 150,
+        springConstant: 0.06,
+        damping: 0.1
+      }
+    }
+  }
+
+  exampleNetwork.value = new Network(exampleNetworkContainer.value, data, options)
+
+  // 监听节点选择事件
+  exampleNetwork.value.on('selectNode', (params) => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0]
+      const nodeData = nodes.get(nodeId)
+      if (nodeData) {
+        selectedExampleNode.value = nodeData.data
+      }
+    }
+  })
+
+  // 监听空白区域点击
+  exampleNetwork.value.on('deselectNode', () => {
+    selectedExampleNode.value = null
+  })
+}
+
+// 关系类型颜色映射
+const getRelationshipColor = (relationshipType) => {
+  const colors = {
+    'HAS_PINYIN': '#FF6B6B',
+    'HAS_RADICAL': '#4ECDC4',
+    'SYNONYM': '#45B7D1',
+    'ANTONYM': '#96CEB4',
+    'DEPENDS_ON': '#F7DC6F',
+    'CONTAINS': '#BB8FCE',
+    'RELATES_TO': '#F8C471',
+    'default': '#667eea'
+  }
+  return colors[relationshipType] || colors.default
 }
 </script>
 
@@ -485,19 +917,19 @@ const getStatusClass = () => {
   transform: translateX(4px);
 }
 
-/* 系统状态面板 */
-.system-section {
+/* 汉字示例面板 */
+.example-section {
   margin: 0;
 }
 
-.system-grid {
+.example-grid {
   display: grid;
   gap: 24px;
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
 }
 
-.system-card {
+.example-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
   border-radius: 20px;
@@ -506,100 +938,223 @@ const getStatusClass = () => {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
 }
 
-.system-header {
+.example-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
 }
 
-.system-header h4 {
+.example-header h4 {
   font-size: 20px;
   font-weight: 700;
   color: #2c3e50;
   margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.connection-badge {
+.node-count-badge {
   padding: 6px 12px;
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;
+  border: 1px solid rgba(102, 126, 234, 0.2);
 }
 
-.connection-badge.connected {
-  background: rgba(82, 196, 26, 0.1);
-  color: #52c41a;
-  border: 1px solid rgba(82, 196, 26, 0.2);
-}
-
-.connection-badge.disconnected {
-  background: rgba(255, 77, 79, 0.1);
-  color: #ff4d4f;
-  border: 1px solid rgba(255, 77, 79, 0.2);
-}
-
-.connection-badge.checking {
-  background: rgba(250, 173, 20, 0.1);
-  color: #faad14;
-  border: 1px solid rgba(250, 173, 20, 0.2);
-}
-
-.system-content {
+.example-content {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-.connection-details {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.graph-container {
+  position: relative;
+  border: 1px solid #e8ecf0;
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 500px;
 }
 
-.detail-item {
+.example-network-container {
+  width: 100%;
+  height: 500px;
+  background: #fafbfc;
+}
+
+.example-node-info-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 300px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(10px);
+  border-left: 1px solid #e8ecf0;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  overflow-y: auto;
+}
+
+.example-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  padding: 16px 20px;
+  border-bottom: 1px solid #e8ecf0;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
 
-.detail-item:last-child {
-  border-bottom: none;
-}
-
-.label {
-  font-size: 14px;
+.example-panel-title {
+  font-size: 16px;
   font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.close-btn {
+  padding: 4px;
   color: #7f8c8d;
 }
 
-.value {
-  font-size: 14px;
+.close-btn:hover {
   color: #2c3e50;
-  font-weight: 500;
-  text-align: right;
-  max-width: 200px;
-  word-break: break-all;
 }
 
-.action-buttons {
+.example-panel-content {
+  padding: 16px;
+}
+
+.example-node-basic-info {
+  margin-bottom: 20px;
+}
+
+.info-item {
   display: flex;
+  align-items: center;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
-.action-buttons .el-button {
-  flex: 1;
-  border-radius: 12px;
+.info-label {
   font-weight: 600;
+  color: #2c3e50;
+  min-width: 40px;
+}
+
+.info-value {
+  color: #7f8c8d;
+  font-family: 'Monaco', monospace;
+}
+
+.info-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.node-label-tag {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.example-node-operations,
+.example-node-properties {
+  border-top: 1px solid #e8ecf0;
+  padding-top: 16px;
+  margin-bottom: 16px;
+}
+
+.operations-title,
+.properties-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.example-panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.example-panel-actions .action-btn {
+  flex: 1;
+  min-width: 100px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 6px;
   transition: all 0.3s ease;
 }
 
-.action-buttons .el-button:hover {
-  transform: translateY(-2px);
+.example-panel-actions .action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.properties-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.property-row {
+  background: rgba(102, 126, 234, 0.05);
+  border-radius: 6px;
+  padding: 10px;
+  border-left: 3px solid #667eea;
+}
+
+.property-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: #667eea;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.property-val {
+  font-size: 13px;
+  color: #2c3e50;
+  word-break: break-all;
+  line-height: 1.3;
+}
+
+.loading-example {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px;
+  color: #7f8c8d;
+}
+
+.empty-example {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 60px 20px;
+}
+
+.empty-message {
+  font-size: 16px;
+  color: #7f8c8d;
+  background: rgba(127, 140, 141, 0.1);
+  padding: 20px 30px;
+  border-radius: 12px;
+  border: 1px solid rgba(127, 140, 141, 0.2);
 }
 
 /* 响应式设计 */
