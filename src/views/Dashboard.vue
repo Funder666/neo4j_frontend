@@ -29,7 +29,7 @@ src/views/Dashboard.vue<template>
                 <div class="example-header">
                   <h4>
                     <el-icon><Collection /></el-icon>
-                    示例："国际中文教育知识图谱”关系图
+                    示例："国际中文教育知识图谱"关系图
                   </h4>
                   <div class="node-count-badge">
                     {{ characterResults.length }} 个节点
@@ -132,7 +132,8 @@ import {
   Collection,
   InfoFilled,
   Close,
-  Loading
+  Loading,
+  RefreshRight
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
 import apiService from '../services/api'
@@ -240,11 +241,42 @@ const createExampleNetwork = () => {
     exampleNetwork.value.destroy()
   }
 
-  const nodes = characterResults.value.map(record => {
+  // 定义"国际中文教育知识图谱"的字符顺序
+  const targetCharacters = ['国', '际', '中', '文', '教', '育', '知', '识', '图', '谱']
+
+  // 分离汉字节点和其他节点，确保汉字按正确顺序排列
+  const characterNodes = []
+  const otherNodes = []
+  
+  characterResults.value.forEach(record => {
     const node = record.n || record;
+    const nodeLabel = (node.properties && node.properties.name) || 
+                     (node.properties && node.properties.value ? node.properties.value.trim() : '') || 
+                     `${node.id}`;
+    
+    if (node.labels && node.labels.includes('Character') && targetCharacters.includes(nodeLabel)) {
+      characterNodes.push({ node, nodeLabel })
+    } else {
+      otherNodes.push({ node, nodeLabel })
+    }
+  })
+  
+  // 按照targetCharacters的顺序对汉字节点进行排序
+  const sortedCharacterNodes = targetCharacters.map(targetChar => {
+    return characterNodes.find(item => item.nodeLabel === targetChar)
+  }).filter(item => item) // 过滤掉找不到的字符
+  
+  // 创建排序后的汉字节点
+  const sortedCharacterNodeList = sortedCharacterNodes.map((item, index) => {
+    const { node, nodeLabel } = item
+    const position = {
+      x: (index - 4.5) * 150, // 增加间距，按索引顺序排列
+      y: 0 // 保持水平居中
+    }
+    
     return {
       id: node.id,
-      label: (node.properties && node.properties.name) || (node.properties && node.properties.value ? node.properties.value.trim() : '') || `${node.id}`,
+      label: nodeLabel,
       group: (node.labels && node.labels[0]) || 'Unknown',
       title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
       color: {
@@ -253,16 +285,74 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 20, 
-        face: 'Arial, sans-serif',
+        size: 28, 
+        face: 'Arial, Microsoft YaHei, sans-serif',
         strokeWidth: 2,
-        strokeColor: '#ffffff'
+        strokeColor: '#ffffff',
+        bold: true
       },
       shape: 'circle',
-      size: 50,
+      size: 70,
+      x: position.x,
+      y: position.y,
+      fixed: {
+        x: true,
+        y: true
+      },
+      physics: false,
       data: node
     }
   })
+  
+  // 创建其他节点
+  const otherNodeList = otherNodes.map(item => {
+    const { node, nodeLabel } = item
+    let position = {};
+    let nodeSize = 50;
+    let fontSize = 20;
+    
+    if (node.labels && node.labels.includes('Pinyin')) {
+      // 拼音节点：放在汉字下方，避开中央区域，分散分布
+      position = { x: Math.random() * 1200 - 600, y: 300 + Math.random() * 200 };
+      nodeSize = 40;
+      fontSize = 16;
+    } else if (node.labels && node.labels.includes('Radical')) {
+      // 部首节点：放在汉字上方，避开中央区域，分散分布
+      position = { x: Math.random() * 1200 - 600, y: -300 - Math.random() * 200 };
+      nodeSize = 45;
+      fontSize = 18;
+    } else {
+      // 其他节点：随机分布在外围，避开汉字中央区域
+      position = { x: Math.random() * 1000 - 500, y: Math.random() * 600 - 300 };
+    }
+    
+    return {
+      id: node.id,
+      label: nodeLabel,
+      group: (node.labels && node.labels[0]) || 'Unknown',
+      title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
+      color: {
+        background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
+        border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
+      },
+      font: { 
+        color: '#2c3e50', 
+        size: fontSize, 
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff',
+        bold: false
+      },
+      shape: 'circle',
+      size: nodeSize,
+      x: position.x,
+      y: position.y,
+      data: node
+    }
+  })
+  
+  // 合并所有节点，汉字节点在前确保正确顺序
+  const nodes = [...sortedCharacterNodeList, ...otherNodeList]
 
   // 创建边数据
   const edges = relationshipsData.value.map((relData, index) => {
@@ -282,24 +372,24 @@ const createExampleNetwork = () => {
       },
       font: {
         color: '#2c3e50',
-        size: 14,
+        size: 12,
         strokeWidth: 2,
         strokeColor: '#ffffff'
       },
       arrows: {
         to: {
           enabled: true,
-          scaleFactor: 1.2,
+          scaleFactor: 1.0,
           type: 'arrow'
         }
       },
       arrowStrikethrough: false,
       smooth: {
         enabled: true,
-        type: 'dynamic',
-        roundness: 0.2
+        type: 'curvedCW',
+        roundness: 0.1
       },
-      width: 3,
+      width: 2,
       data: relationship
     }
   })
@@ -315,13 +405,12 @@ const createExampleNetwork = () => {
       shadow: {
         enabled: true,
         color: 'rgba(0,0,0,0.2)',
-        size: 10,
+        size: 8,
         x: 2,
         y: 2
       },
       font: {
         color: '#2c3e50',
-        size: 20,
         face: 'Arial, Microsoft YaHei, sans-serif',
         strokeWidth: 2,
         strokeColor: '#ffffff'
@@ -329,7 +418,7 @@ const createExampleNetwork = () => {
       chosen: {
         node: (values, id, selected, hovering) => {
           values.shadow = true
-          values.shadowSize = 15
+          values.shadowSize = 12
           values.borderWidth = 4
         }
       }
@@ -338,42 +427,76 @@ const createExampleNetwork = () => {
       arrows: {
         to: { 
           enabled: true, 
-          scaleFactor: 1.2,
+          scaleFactor: 1.0,
           type: 'arrow'
         }
       },
       smooth: {
         enabled: true,
-        type: 'dynamic',
-        roundness: 0.2
+        type: 'curvedCW',
+        roundness: 0.1
       },
       font: {
         color: '#2c3e50',
-        size: 14,
+        size: 12,
         strokeWidth: 2,
         strokeColor: '#ffffff'
       },
-      width: 3
+      width: 2,
+      selectionWidth: 3
     },
     interaction: {
       hover: true,
       selectConnectedEdges: true,
-      tooltipDelay: 300
+      tooltipDelay: 200,
+      hideEdgesOnDrag: false,
+      hideNodesOnDrag: false,
+      dragNodes: true,
+      dragView: true,
+      zoomView: true,
+      multiselect: true,
+      keyboard: {
+        enabled: true,
+        bindToWindow: false
+      }
+    },
+    layout: {
+      improvedLayout: true,
+      clusterThreshold: 150,
+      hierarchical: false
     },
     physics: {
       enabled: true,
-      stabilization: { iterations: 150 },
+      stabilization: { 
+        iterations: 500,
+        updateInterval: 10,
+        fit: true
+      },
       barnesHut: {
-        gravitationalConstant: -3000,
-        centralGravity: 0.5,
+        gravitationalConstant: -1000,
+        centralGravity: 0.1,
         springLength: 200,
-        springConstant: 0.06,
-        damping: 0.1
-      }
+        springConstant: 0.02,
+        damping: 0.9,
+        avoidOverlap: 1.5
+      },
+      maxVelocity: 10,
+      minVelocity: 0.01,
+      solver: 'barnesHut',
+      timestep: 0.1
     }
   }
 
   exampleNetwork.value = new Network(exampleNetworkContainer.value, data, options)
+
+  // 监听网络稳定事件，稳定后禁用物理引擎停止自动移动
+  exampleNetwork.value.once('stabilizationIterationsDone', () => {
+    // 完全禁用物理引擎，停止所有自动移动
+    exampleNetwork.value.setOptions({ 
+      physics: { enabled: false }
+    });
+    console.log('网络布局已稳定，物理引擎已禁用，节点保持静止')
+  })
 
   // 监听节点选择事件
   exampleNetwork.value.on('selectNode', (params) => {
@@ -394,6 +517,7 @@ const createExampleNetwork = () => {
     selectedExampleNode.value = null
   })
 }
+
 
 // 节点颜色映射
 const getNodeColor = (label) => {
@@ -1190,6 +1314,12 @@ const getVisibleProperties = (node) => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .node-count-badge {
