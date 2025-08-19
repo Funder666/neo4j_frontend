@@ -155,6 +155,15 @@
             </div>
             <div class="results-actions">
               <el-button 
+                v-if="isAdmin && selectedRelType"
+                type="success" 
+                class="action-btn"
+                @click="showCreateRelationshipDialog"
+              >
+                <el-icon><Plus /></el-icon>
+                新增关系
+              </el-button>
+              <el-button 
                 type="info" 
                 class="export-btn"
                 @click="exportResults"
@@ -327,11 +336,21 @@
             </template>
             <template #description>
               <p class="empty-title">暂无查询结果</p>
-              <p class="empty-subtitle">请检查 Cypher 语句或尝试其他查询条件</p>
+              <p class="empty-subtitle">未找到 {{ selectedRelTypeDisplayName }} 类型的关系，您可以创建一个新关系</p>
             </template>
-            <el-button type="primary" @click="clearResults">
-              重新查询
-            </el-button>
+            <div class="empty-actions">
+              <el-button type="primary" @click="clearResults">
+                重新查询
+              </el-button>
+              <el-button 
+                v-if="isAdmin && selectedRelType"
+                type="success" 
+                @click="showCreateRelationshipDialog"
+              >
+                <el-icon><Plus /></el-icon>
+                创建 {{ selectedRelTypeDisplayName }} 关系
+              </el-button>
+            </div>
           </el-empty>
         </div>
       </div>
@@ -409,6 +428,308 @@
         </span>
       </template>
     </el-dialog>
+
+    <!-- 创建关系对话框 -->
+    <el-dialog
+      v-model="relationshipDialog.visible"
+      title="创建新关系"
+      width="700px"
+      class="relationship-dialog"
+    >
+      <el-form
+        ref="relationshipForm"
+        :model="relationshipDialog.form"
+        :rules="relationshipDialog.rules"
+        label-width="120px"
+      >
+        <el-form-item label="起始节点" prop="startNode">
+          <el-select
+            v-model="relationshipDialog.form.startNode"
+            filterable
+            remote
+            reserve-keyword
+            :placeholder="getNodePlaceholder('start')"
+            :remote-method="handleStartNodeSearch"
+            :loading="startNodeLoading"
+            allow-create
+            default-first-option
+            style="width: 100%"
+          >
+            <el-option
+              v-for="node in startNodeOptions"
+              :key="node.id"
+              :label="node.label"
+              :value="node.id"
+            >
+              <span style="float: left">{{ node.label }}</span>
+              <span style="float: right; color: #8492a6; font-size: 13px">ID: {{ node.id }}</span>
+            </el-option>
+            <template #empty>
+              <div class="select-empty">
+                <p>未找到匹配节点</p>
+                <p style="font-size: 12px; color: #8492a6;">{{ getSearchHint() }}</p>
+              </div>
+            </template>
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="关系类型" prop="relationshipType">
+          <el-select
+            v-model="relationshipDialog.form.relationshipType"
+            placeholder="选择关系类型"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="relType in relationshipTypes"
+              :key="relType.type"
+              :label="relType.display_name || relType.type"
+              :value="relType.type"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="结束节点" prop="endNode">
+          <el-select
+            v-model="relationshipDialog.form.endNode"
+            filterable
+            remote
+            reserve-keyword
+            :placeholder="getNodePlaceholder('end')"
+            :remote-method="handleEndNodeSearch"
+            :loading="endNodeLoading"
+            allow-create
+            default-first-option
+            style="width: 100%"
+          >
+            <el-option
+              v-for="node in endNodeOptions"
+              :key="node.id"
+              :label="node.label"
+              :value="node.id"
+            >
+              <span style="float: left">{{ node.label }}</span>
+              <span style="float: right; color: #8492a6; font-size: 13px">ID: {{ node.id }}</span>
+            </el-option>
+            <template #empty>
+              <div class="select-empty">
+                <p>未找到匹配节点</p>
+                <p style="font-size: 12px; color: #8492a6;">{{ getSearchHint() }}</p>
+              </div>
+            </template>
+          </el-select>
+        </el-form-item>
+        
+        <!-- 预览关系 -->
+        <el-form-item label="关系预览">
+          <div class="relationship-preview">
+            <el-tag v-if="relationshipDialog.form.startNode" type="info">
+              {{ getSelectedNodeLabel(relationshipDialog.form.startNode, 'start') || '起始节点' }}
+            </el-tag>
+            <el-icon style="margin: 0 8px;"><Right /></el-icon>
+            <el-tag v-if="relationshipDialog.form.relationshipType" type="warning">
+              {{ relationshipTypes.find(r => r.type === relationshipDialog.form.relationshipType)?.display_name || relationshipDialog.form.relationshipType }}
+            </el-tag>
+            <el-icon style="margin: 0 8px;"><Right /></el-icon>
+            <el-tag v-if="relationshipDialog.form.endNode" type="success">
+              {{ getSelectedNodeLabel(relationshipDialog.form.endNode, 'end') || '结束节点' }}
+            </el-tag>
+          </div>
+        </el-form-item>
+
+        <el-divider content-position="left">
+          <span style="color: #667eea; font-weight: 600;">关系属性（可选）</span>
+        </el-divider>
+
+        <el-form-item>
+          <div class="properties-help">
+            <el-alert
+              title="关系属性用于存储关系的额外信息"
+              type="info"
+              :closable="false"
+              show-icon
+            >
+              <template #default>
+                <p>例如：权重(weight): 0.8，时间(time): 2024-01-01，强度(strength): high</p>
+                <p>如果不需要额外属性，可以留空。</p>
+              </template>
+            </el-alert>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="属性列表">
+          <div class="properties-editor">
+            <div 
+              v-for="(prop, index) in relationshipDialog.form.properties" 
+              :key="index"
+              class="property-input-row"
+            >
+              <el-input
+                v-model="prop.key"
+                placeholder="属性名（如：weight）"
+                style="width: 40%"
+              />
+              <el-input
+                v-model="prop.value"
+                placeholder="属性值（如：0.8）"
+                style="width: 40%"
+              />
+              <el-button
+                type="danger"
+                @click="removeRelationshipProperty(index)"
+                :disabled="relationshipDialog.form.properties.length <= 1"
+                size="small"
+              >
+                删除
+              </el-button>
+            </div>
+            <el-button type="primary" @click="addRelationshipProperty" size="small">
+              <el-icon><Plus /></el-icon>
+              添加属性
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="relationshipDialog.visible = false">取消</el-button>
+          <el-button type="primary" @click="saveRelationship" :loading="relationshipDialog.loading">
+            <el-icon><Plus /></el-icon>
+            创建关系
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑关系对话框 -->
+    <el-dialog
+      v-model="editRelationshipDialog.visible"
+      title="编辑关系"
+      width="700px"
+      class="relationship-dialog"
+    >
+      <el-form
+        ref="editRelationshipForm"
+        :model="editRelationshipDialog.form"
+        label-width="120px"
+      >
+        <!-- 关系信息展示 -->
+        <el-form-item label="起始节点">
+          <el-input 
+            :value="getNodeDisplayLabel(findNodeFromResults(editRelationshipDialog.currentRelationship?.start_node_id))"
+            readonly
+            style="width: 100%"
+          >
+            <template #prefix>
+              <el-icon><User /></el-icon>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item label="关系类型">
+          <el-input 
+            :value="editRelationshipDialog.currentRelationship?.type || ''"
+            readonly
+            style="width: 100%"
+          >
+            <template #prefix>
+              <el-icon><Share /></el-icon>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <el-form-item label="结束节点">
+          <el-input 
+            :value="getNodeDisplayLabel(findNodeFromResults(editRelationshipDialog.currentRelationship?.end_node_id))"
+            readonly
+            style="width: 100%"
+          >
+            <template #prefix>
+              <el-icon><User /></el-icon>
+            </template>
+          </el-input>
+        </el-form-item>
+
+        <!-- 关系预览 -->
+        <el-form-item label="关系预览">
+          <div class="relationship-preview">
+            <el-tag type="info">
+              {{ getNodeDisplayLabel(findNodeFromResults(editRelationshipDialog.currentRelationship?.start_node_id)) }}
+            </el-tag>
+            <el-icon style="margin: 0 8px;"><Right /></el-icon>
+            <el-tag type="warning">
+              {{ editRelationshipDialog.currentRelationship?.type }}
+            </el-tag>
+            <el-icon style="margin: 0 8px;"><Right /></el-icon>
+            <el-tag type="success">
+              {{ getNodeDisplayLabel(findNodeFromResults(editRelationshipDialog.currentRelationship?.end_node_id)) }}
+            </el-tag>
+          </div>
+        </el-form-item>
+
+        <el-divider content-position="left">
+          <span style="color: #667eea; font-weight: 600;">关系属性</span>
+        </el-divider>
+
+        <el-form-item>
+          <div class="properties-help">
+            <el-alert
+              title="关系属性用于存储关系的额外信息"
+              type="info"
+              :closable="false"
+              show-icon
+            >
+              <template #default>
+                <p>例如：权重(weight): 0.8，时间(time): 2024-01-01，强度(strength): high</p>
+              </template>
+            </el-alert>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="属性列表">
+          <div class="properties-editor">
+            <div 
+              v-for="(prop, index) in editRelationshipDialog.form.properties" 
+              :key="index"
+              class="property-input-row"
+            >
+              <el-input
+                v-model="prop.key"
+                placeholder="属性名（如：weight）"
+                style="width: 40%"
+              />
+              <el-input
+                v-model="prop.value"
+                placeholder="属性值（如：0.8）"
+                style="width: 40%"
+              />
+              <el-button
+                type="danger"
+                @click="removeEditRelationshipProperty(index)"
+                :disabled="editRelationshipDialog.form.properties.length <= 1"
+                size="small"
+              >
+                删除
+              </el-button>
+            </div>
+            <el-button type="primary" @click="addEditRelationshipProperty" size="small">
+              <el-icon><Plus /></el-icon>
+              添加属性
+            </el-button>
+          </div>
+        </el-form-item>
+      </el-form>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="editRelationshipDialog.visible = false">取消</el-button>
+          <el-button type="primary" @click="saveEditedRelationship" :loading="editRelationshipDialog.loading">
+            <el-icon><Edit /></el-icon>
+            保存修改
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </AppLayout>
 </template>
 
@@ -430,7 +751,9 @@ import {
   Loading,
   Edit,
   Delete,
-  User
+  User,
+  Plus,
+  Right
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -480,8 +803,37 @@ const nodeDialog = reactive({
   }
 })
 
+// 关系创建对话框
+const relationshipDialog = reactive({
+  visible: false,
+  loading: false,
+  form: {
+    startNode: '',
+    endNode: '',
+    relationshipType: '',
+    properties: [{ key: '', value: '' }]
+  },
+  rules: {
+    startNode: [
+      { required: true, message: '请选择起始节点', trigger: 'change' }
+    ],
+    endNode: [
+      { required: true, message: '请选择结束节点', trigger: 'change' }
+    ],
+    relationshipType: [
+      { required: true, message: '请选择关系类型', trigger: 'change' }
+    ]
+  }
+})
+
 const nodeForm = ref(null)
+const relationshipForm = ref(null)
 const availableLabels = ref([])
+const availableNodes = ref([])  // 可选择的节点列表
+const startNodeOptions = ref([])  // 起始节点搜索结果
+const endNodeOptions = ref([])    // 结束节点搜索结果
+const startNodeLoading = ref(false)
+const endNodeLoading = ref(false)
 
 // 加载关系类型
 const loadRelationshipTypes = async () => {
@@ -1202,29 +1554,50 @@ const deleteNode = async (node) => {
   }
 }
 
-const editRelationship = async (relationship) => {
+// 编辑关系对话框变量
+const editRelationshipDialog = reactive({
+  visible: false,
+  loading: false,
+  currentRelationshipId: null,
+  currentRelationship: null,  // 存储完整的关系信息
+  form: {
+    properties: [{ key: '', value: '' }]
+  }
+})
+
+const editRelationshipForm = ref(null)
+
+const editRelationship = (relationship) => {
+  // 设置当前编辑的关系ID和完整信息
+  editRelationshipDialog.currentRelationshipId = relationship.id
+  editRelationshipDialog.currentRelationship = relationship
+  
+  // 将现有属性转换为表单格式
+  const properties = relationship.properties || {}
+  editRelationshipDialog.form.properties = Object.keys(properties).length > 0 
+    ? Object.entries(properties).map(([key, value]) => ({ key, value }))
+    : [{ key: '', value: '' }]
+  
+  editRelationshipDialog.visible = true
+}
+
+// 保存编辑的关系
+const saveEditedRelationship = async () => {
   try {
-    const { value: newProperties } = await ElMessageBox.prompt(
-      '请输入关系的新属性（JSON格式）：',
-      '编辑关系',
-      {
-        confirmButtonText: '保存',
-        cancelButtonText: '取消',
-        inputType: 'textarea',
-        inputValue: JSON.stringify(relationship.properties || {}, null, 2)
+    editRelationshipDialog.loading = true
+    
+    // 准备属性
+    const properties = {}
+    editRelationshipDialog.form.properties.forEach(prop => {
+      if (prop.key && prop.value) {
+        properties[prop.key] = prop.value
       }
-    )
+    })
 
-    let properties
-    try {
-      properties = JSON.parse(newProperties || '{}')
-    } catch (e) {
-      ElMessage.error('属性格式不正确，请输入有效的JSON格式')
-      return
-    }
-
-    await apiService.updateRelationship(relationship.id, properties)
+    await apiService.updateRelationship(editRelationshipDialog.currentRelationshipId, properties)
     ElMessage.success('关系更新成功')
+    
+    editRelationshipDialog.visible = false
     
     // 重新查询以更新结果
     if (selectedRelType.value) {
@@ -1232,10 +1605,22 @@ const editRelationship = async (relationship) => {
     }
     selectedElement.value = null
   } catch (error) {
-    if (error !== 'cancel') {
-      console.error('编辑关系失败:', error)
-      ElMessage.error('编辑关系失败: ' + error.message)
-    }
+    console.error('编辑关系失败:', error)
+    ElMessage.error('编辑关系失败: ' + error.message)
+  } finally {
+    editRelationshipDialog.loading = false
+  }
+}
+
+// 添加编辑关系属性
+const addEditRelationshipProperty = () => {
+  editRelationshipDialog.form.properties.push({ key: '', value: '' })
+}
+
+// 删除编辑关系属性
+const removeEditRelationshipProperty = (index) => {
+  if (editRelationshipDialog.form.properties.length > 1) {
+    editRelationshipDialog.form.properties.splice(index, 1)
   }
 }
 
@@ -1265,6 +1650,357 @@ const deleteRelationship = async (relationship) => {
       ElMessage.error('删除关系失败: ' + error.message)
     }
   }
+}
+
+// 显示创建关系对话框
+const showCreateRelationshipDialog = async () => {
+  try {
+    // 加载可用节点
+    await loadAvailableNodes()
+    
+    // 初始化节点选项
+    startNodeOptions.value = availableNodes.value
+    endNodeOptions.value = availableNodes.value
+    
+    // 重置表单
+    relationshipDialog.form = {
+      startNode: '',
+      endNode: '',
+      relationshipType: selectedRelType.value, // 预设为当前选中的关系类型
+      properties: [{ key: '', value: '' }]
+    }
+    
+    relationshipDialog.visible = true
+  } catch (error) {
+    console.error('加载节点失败:', error)
+    ElMessage.error('加载节点失败: ' + error.message)
+  }
+}
+
+// 动态搜索节点
+const searchNodes = async (query) => {
+  if (!query || query.length < 1) {
+    return []
+  }
+  
+  try {
+    // 根据当前选中的关系类型优化搜索
+    let searchQuery = ''
+    
+    if (selectedRelType.value === 'HAS_PINYIN') {
+      // 对于拼音关系，优先搜索Character节点
+      searchQuery = `
+        MATCH (n) 
+        WHERE (n.name IS NOT NULL AND n.name CONTAINS $query) OR 
+              (n.value IS NOT NULL AND n.value CONTAINS $query) OR 
+              (n.title IS NOT NULL AND n.title CONTAINS $query) OR
+              toString(n.id) CONTAINS $query
+        RETURN n, 
+        CASE 
+          WHEN 'Character' IN labels(n) THEN 1
+          WHEN 'Pinyin' IN labels(n) THEN 2
+          ELSE 3
+        END as priority
+        ORDER BY priority, n.id
+        LIMIT 50
+      `
+    } else if (selectedRelType.value === 'HAS_RADICAL') {
+      // 对于部首关系，优先搜索Character和Radical节点
+      searchQuery = `
+        MATCH (n) 
+        WHERE (n.name IS NOT NULL AND n.name CONTAINS $query) OR 
+              (n.value IS NOT NULL AND n.value CONTAINS $query) OR 
+              (n.title IS NOT NULL AND n.title CONTAINS $query) OR
+              toString(n.id) CONTAINS $query
+        RETURN n,
+        CASE 
+          WHEN 'Character' IN labels(n) THEN 1
+          WHEN 'Radical' IN labels(n) THEN 2
+          ELSE 3
+        END as priority
+        ORDER BY priority, n.id
+        LIMIT 50
+      `
+    } else {
+      // 通用搜索，Character节点优先
+      searchQuery = `
+        MATCH (n) 
+        WHERE (n.name IS NOT NULL AND n.name CONTAINS $query) OR 
+              (n.value IS NOT NULL AND n.value CONTAINS $query) OR 
+              (n.title IS NOT NULL AND n.title CONTAINS $query) OR
+              toString(n.id) CONTAINS $query
+        RETURN n,
+        CASE 
+          WHEN 'Character' IN labels(n) THEN 1
+          ELSE 2
+        END as priority
+        ORDER BY priority, n.id
+        LIMIT 50
+      `
+    }
+    
+    const response = await apiService.runQuery(searchQuery, { query })
+    
+    return response.records.map(record => {
+      const node = record.n
+      const label = (node.properties && node.properties.name) || 
+                   (node.properties && node.properties.value) || 
+                   (node.properties && node.properties.title) || 
+                   `${node.labels ? node.labels[0] : 'Node'} ${node.id}`
+      
+      // 添加标签信息到显示标签中，帮助用户区分
+      const labelWithType = node.labels && node.labels.length > 0 
+        ? `${label} (${node.labels.join(', ')})` 
+        : label
+      
+      return {
+        id: node.id,
+        label: labelWithType,
+        labels: node.labels,
+        properties: node.properties,
+        value: node.id  // 用于el-select的value
+      }
+    })
+  } catch (error) {
+    console.error('搜索节点失败:', error)
+    return []
+  }
+}
+
+// 加载可选择的节点（初始加载）
+const loadAvailableNodes = async () => {
+  try {
+    // 查询节点作为初始选项，Character节点优先
+    const response = await apiService.runQuery(`
+      MATCH (n) 
+      RETURN n,
+      CASE 
+        WHEN 'Character' IN labels(n) THEN 1
+        WHEN 'Pinyin' IN labels(n) THEN 2
+        WHEN 'Radical' IN labels(n) THEN 3
+        ELSE 4
+      END as priority
+      ORDER BY priority, n.id
+      LIMIT 20
+    `, {})
+    
+    availableNodes.value = response.records.map(record => {
+      const node = record.n
+      const label = (node.properties && node.properties.name) || 
+                   (node.properties && node.properties.value) || 
+                   (node.properties && node.properties.title) || 
+                   `${node.labels ? node.labels[0] : 'Node'} ${node.id}`
+      
+      // 添加标签信息到显示标签中，帮助用户区分
+      const labelWithType = node.labels && node.labels.length > 0 
+        ? `${label} (${node.labels.join(', ')})` 
+        : label
+      
+      return {
+        id: node.id,
+        label: labelWithType,
+        labels: node.labels,
+        properties: node.properties,
+        value: node.id
+      }
+    })
+    
+    console.log('加载了初始节点:', availableNodes.value.length)
+  } catch (error) {
+    console.error('加载节点失败:', error)
+    availableNodes.value = []
+  }
+}
+
+// 添加关系属性
+const addRelationshipProperty = () => {
+  relationshipDialog.form.properties.push({ key: '', value: '' })
+}
+
+// 删除关系属性
+const removeRelationshipProperty = (index) => {
+  if (relationshipDialog.form.properties.length > 1) {
+    relationshipDialog.form.properties.splice(index, 1)
+  }
+}
+
+// 处理起始节点搜索
+const handleStartNodeSearch = async (query) => {
+  if (!query) {
+    startNodeOptions.value = availableNodes.value
+    return
+  }
+  
+  startNodeLoading.value = true
+  try {
+    startNodeOptions.value = await searchNodes(query)
+  } finally {
+    startNodeLoading.value = false
+  }
+}
+
+// 处理结束节点搜索
+const handleEndNodeSearch = async (query) => {
+  if (!query) {
+    endNodeOptions.value = availableNodes.value
+    return
+  }
+  
+  endNodeLoading.value = true
+  try {
+    endNodeOptions.value = await searchNodes(query)
+  } finally {
+    endNodeLoading.value = false
+  }
+}
+
+// 保存新关系
+const saveRelationship = async () => {
+  try {
+    await relationshipForm.value.validate()
+    
+    relationshipDialog.loading = true
+    
+    // 准备属性
+    const properties = {}
+    relationshipDialog.form.properties.forEach(prop => {
+      if (prop.key && prop.value) {
+        properties[prop.key] = prop.value
+      }
+    })
+    
+    // 如果选择的是新节点ID（非数字），需要先创建节点
+    let startNodeId = relationshipDialog.form.startNode
+    let endNodeId = relationshipDialog.form.endNode
+    
+    // 检查起始节点是否需要创建
+    if (isNaN(parseInt(startNodeId))) {
+      try {
+        const newStartNode = await createNodeIfNeeded(startNodeId, 'Character')
+        startNodeId = newStartNode.id
+      } catch (error) {
+        ElMessage.error('创建起始节点失败: ' + error.message)
+        return
+      }
+    }
+    
+    // 检查结束节点是否需要创建
+    if (isNaN(parseInt(endNodeId))) {
+      try {
+        const newEndNode = await createNodeIfNeeded(endNodeId, 'Character')
+        endNodeId = newEndNode.id
+      } catch (error) {
+        ElMessage.error('创建结束节点失败: ' + error.message)
+        return
+      }
+    }
+    
+    // 创建关系
+    await apiService.createRelationship(
+      parseInt(startNodeId),
+      parseInt(endNodeId),
+      relationshipDialog.form.relationshipType,
+      properties
+    )
+    
+    ElMessage.success('关系创建成功')
+    relationshipDialog.visible = false
+    
+    // 重新查询以显示新创建的关系
+    if (selectedRelType.value) {
+      await queryRelationship()
+    }
+  } catch (error) {
+    console.error('创建关系失败:', error)
+    ElMessage.error('创建关系失败: ' + error.message)
+  } finally {
+    relationshipDialog.loading = false
+  }
+}
+
+// 创建新节点（如果需要）
+const createNodeIfNeeded = async (nodeValue, defaultLabel = 'Character') => {
+  try {
+    const response = await apiService.createNode([defaultLabel], { value: nodeValue })
+    ElMessage.success(`创建了新节点: ${nodeValue}`)
+    return response
+  } catch (error) {
+    console.error('创建节点失败:', error)
+    throw error
+  }
+}
+
+// 从当前查询结果中查找节点信息
+const findNodeFromResults = (nodeId) => {
+  for (const record of queryResults.value) {
+    if (record.n && record.n.id === nodeId) {
+      return record.n
+    }
+    if (record.m && record.m.id === nodeId) {
+      return record.m
+    }
+  }
+  return null
+}
+
+// 获取节点显示标签
+const getNodeDisplayLabel = (node) => {
+  if (!node) return '未知节点'
+  return (node.properties && node.properties.name) || 
+         (node.properties && node.properties.value) || 
+         (node.properties && node.properties.title) || 
+         `${node.labels ? node.labels[0] : 'Node'} ${node.id}`
+}
+
+// 获取选中节点的标签（用于预览）
+const getSelectedNodeLabel = (nodeId, type) => {
+  if (!nodeId) return ''
+  
+  // 如果是数字ID，从选项列表中查找
+  if (!isNaN(parseInt(nodeId))) {
+    const options = type === 'start' ? startNodeOptions.value : endNodeOptions.value
+    const node = options.find(n => n.id === parseInt(nodeId))
+    return node ? node.label : `节点 ${nodeId}`
+  }
+  
+  // 如果是字符串，直接返回（新创建的节点）
+  return nodeId
+}
+
+// 根据关系类型获取节点选择的占位符文本
+const getNodePlaceholder = (nodeType) => {
+  if (!selectedRelType.value) {
+    return "输入搜索节点（支持名称、值、ID）"
+  }
+  
+  if (selectedRelType.value === 'HAS_PINYIN') {
+    return nodeType === 'start' 
+      ? "搜索汉字节点（如：文、国、际）" 
+      : "搜索拼音节点（如：wén、guó、jì）"
+  } else if (selectedRelType.value === 'HAS_RADICAL') {
+    return nodeType === 'start' 
+      ? "搜索汉字节点（如：文、国、际）" 
+      : "搜索部首节点（如：文、囗、亻）"
+  } else if (selectedRelType.value === 'DEPENDS_ON') {
+    return "搜索汉字节点（支持依赖关系）"
+  }
+  
+  return "输入搜索节点（优先显示汉字节点）"
+}
+
+// 根据关系类型获取搜索提示
+const getSearchHint = () => {
+  if (!selectedRelType.value) {
+    return "支持按名称、值、ID搜索，优先显示汉字节点"
+  }
+  
+  if (selectedRelType.value === 'HAS_PINYIN') {
+    return "优先显示汉字和拼音节点，输入汉字如：文"
+  } else if (selectedRelType.value === 'HAS_RADICAL') {
+    return "优先显示汉字和部首节点，输入汉字如：文"
+  }
+  
+  return "优先显示汉字节点，支持按名称、值、ID搜索"
 }
 
 onMounted(() => {
@@ -1855,6 +2591,18 @@ onMounted(() => {
   }
 }
 
+/* 空状态按钮 */
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.empty-actions .el-button {
+  min-width: 120px;
+}
+
 /* 节点编辑对话框 */
 .properties-editor {
   border: 1px solid #dcdfe6;
@@ -1872,5 +2620,90 @@ onMounted(() => {
 
 .property-input-row:last-child {
   margin-bottom: 0;
+}
+
+/* 关系创建对话框 */
+.relationship-dialog {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.relationship-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(102, 126, 234, 0.05);
+  border-radius: 8px;
+  border: 1px solid rgba(102, 126, 234, 0.2);
+}
+
+.relationship-preview .el-tag {
+  font-weight: 500;
+}
+
+.relationship-preview .el-icon {
+  color: #667eea;
+  font-size: 16px;
+}
+
+/* 选择框空状态样式 */
+.select-empty {
+  padding: 12px;
+  text-align: center;
+  color: #8492a6;
+}
+
+.select-empty p {
+  margin: 4px 0;
+}
+
+/* 动作按钮样式统一 */
+.action-btn {
+  height: 40px;
+  padding: 0 20px;
+  border-radius: 10px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* 属性说明样式 */
+.properties-help {
+  margin-bottom: 16px;
+}
+
+.properties-help .el-alert {
+  border-radius: 8px;
+}
+
+.properties-help p {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* 只读输入框样式 */
+.el-input.is-disabled .el-input__wrapper,
+.el-input[readonly] .el-input__wrapper {
+  background-color: #f8f9fa !important;
+  border-color: #e8ecf0;
+}
+
+.el-input.is-disabled .el-input__inner,
+.el-input[readonly] .el-input__inner {
+  color: #2c3e50 !important;
+  font-weight: 500;
+}
+
+/* 分割线样式 */
+.el-divider .el-divider__text {
+  font-size: 14px;
+  font-weight: 600;
 }
 </style>
