@@ -29,7 +29,7 @@ src/views/Dashboard.vue<template>
                 <div class="example-header">
                   <h4>
                     <el-icon><Collection /></el-icon>
-                    示例：汉字节点网络
+                    示例："国际中文教育知识图谱”关系图
                   </h4>
                   <div class="node-count-badge">
                     {{ characterResults.length }} 个节点
@@ -93,11 +93,11 @@ src/views/Dashboard.vue<template>
                           <h6 class="properties-title">属性</h6>
                           <div class="properties-list">
                             <div 
-                              v-for="(value, key) in selectedExampleNode.properties"
+                              v-for="(value, key) in getVisibleProperties(selectedExampleNode)"
                               :key="key"
                               class="property-row"
                             >
-                              <div class="property-name">{{ key }}</div>
+                              <div class="property-name">{{ getPropertyDisplayName(key, selectedExampleNode.labels) }}</div>
                               <div class="property-val">{{ formatProperty(value) }}</div>
                             </div>
                           </div>
@@ -145,48 +145,79 @@ const currentUser = ref(authService.getCurrentUser())
 
 // 汉字示例相关变量
 const characterResults = ref([])
+const relationshipsData = ref([])
 const selectedExampleNode = ref(null)
 const exampleLoading = ref(false)
 const exampleNetworkContainer = ref(null)
 const exampleNetwork = ref(null)
+const availableLabels = ref([])
+const propertyPermissions = ref({})
 
 onMounted(async () => {
-  // 页面加载完成后自动加载汉字示例
+  // 首先加载标签映射
+  await loadAvailableLabels()
+  // 然后加载汉字示例
   await loadCharacterExample()
 })
 
-// 加载汉字节点示例
+// 加载汉字节点示例 - 专门查询"国际中文教育知识图谱"这10个汉字
 const loadCharacterExample = async () => {
   exampleLoading.value = true
   
   try {
-    // 尝试多种方法获取Character节点
-    let response
-    try {
-      // 首先尝试使用getNodes方法
-      response = await apiService.getNodes(25, 'Character', 0)
-    } catch (error) {
-      console.log('getNodes方法失败，尝试直接查询:', error)
-      // 如果失败，使用直接的Cypher查询
-      response = await apiService.runQuery('MATCH (n:Character) RETURN n LIMIT 25', {})
-    }
+    // 定义要查询的汉字
+    const targetCharacters = ['国', '际', '中', '文', '教', '育', '知', '识', '图', '谱']
     
-    // 处理不同的响应格式
-    let nodes = []
-    if (response.nodes) {
-      nodes = response.nodes
-    } else if (response.records) {
-      nodes = response.records.map(record => record.n || record)
+    // 构造Cypher查询，查找这些汉字及其关系
+    const query = `
+      MATCH (c:Character)
+      WHERE c.value IN $characters
+      OPTIONAL MATCH (c)-[r:HAS_RADICAL|HAS_PINYIN|DEPENDS_ON]-(related)
+      RETURN c, r, related
+    `
+    
+    const response = await apiService.runQuery(query, { characters: targetCharacters })
+    
+    // 处理响应数据
+    let records = []
+    if (response.records) {
+      records = response.records
     } else if (Array.isArray(response)) {
-      nodes = response
+      records = response
     }
     
-    characterResults.value = nodes
+    // 提取汉字节点
+    const characterMap = new Map()
+    const relationships = []
+    
+    records.forEach(record => {
+      // 添加汉字节点
+      if (record.c) {
+        characterMap.set(record.c.id, record.c)
+      }
+      
+      // 添加关系和相关节点
+      if (record.r && record.related) {
+        relationships.push({
+          start_node: record.c,
+          relationship: record.r,
+          end_node: record.related
+        })
+        
+        // 也保存相关节点（如部首、拼音等）
+        if (record.related) {
+          characterMap.set(record.related.id, record.related)
+        }
+      }
+    })
+    
+    characterResults.value = Array.from(characterMap.values()).map(node => ({ n: node }))
+    relationshipsData.value = relationships
     
     if (characterResults.value.length === 0) {
-      ElMessage.info('未找到汉字节点')
+      ElMessage.info('未找到"国际中文教育知识图谱"相关汉字节点')
     } else {
-      ElMessage.success(`加载了 ${characterResults.value.length} 个汉字节点`)
+      ElMessage.success(`加载了"国际中文教育知识图谱"中的 ${characterResults.value.length} 个节点和 ${relationships.length} 个关系`)
       // 创建图形可视化
       setTimeout(() => {
         createExampleNetwork()
@@ -233,9 +264,49 @@ const createExampleNetwork = () => {
     }
   })
 
+  // 创建边数据
+  const edges = relationshipsData.value.map((relData, index) => {
+    const relationship = relData.relationship
+    const startNode = relData.start_node
+    const endNode = relData.end_node
+    
+    return {
+      id: relationship.id || `edge_${index}`,
+      from: startNode.id,
+      to: endNode.id,
+      label: relationship.type,
+      title: `关系类型: ${relationship.type}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
+      color: {
+        color: getRelationshipColor(relationship.type),
+        highlight: getRelationshipHighlightColor(relationship.type)
+      },
+      font: {
+        color: '#2c3e50',
+        size: 14,
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      arrows: {
+        to: {
+          enabled: true,
+          scaleFactor: 1.2,
+          type: 'arrow'
+        }
+      },
+      arrowStrikethrough: false,
+      smooth: {
+        enabled: true,
+        type: 'dynamic',
+        roundness: 0.2
+      },
+      width: 3,
+      data: relationship
+    }
+  })
+
   const data = {
     nodes: nodes,
-    edges: []
+    edges: edges
   }
 
   const options = {
@@ -263,20 +334,41 @@ const createExampleNetwork = () => {
         }
       }
     },
+    edges: {
+      arrows: {
+        to: { 
+          enabled: true, 
+          scaleFactor: 1.2,
+          type: 'arrow'
+        }
+      },
+      smooth: {
+        enabled: true,
+        type: 'dynamic',
+        roundness: 0.2
+      },
+      font: {
+        color: '#2c3e50',
+        size: 14,
+        strokeWidth: 2,
+        strokeColor: '#ffffff'
+      },
+      width: 3
+    },
     interaction: {
       hover: true,
-      selectConnectedEdges: false,
+      selectConnectedEdges: true,
       tooltipDelay: 300
     },
     physics: {
       enabled: true,
-      stabilization: { iterations: 100 },
+      stabilization: { iterations: 150 },
       barnesHut: {
-        gravitationalConstant: -2000,
-        centralGravity: 0.3,
-        springLength: 120,
-        springConstant: 0.04,
-        damping: 0.09
+        gravitationalConstant: -3000,
+        centralGravity: 0.5,
+        springLength: 200,
+        springConstant: 0.06,
+        damping: 0.1
       }
     }
   }
@@ -317,6 +409,21 @@ const getNodeColor = (label) => {
 
 const darkenColor = (color, factor) => {
   return color
+}
+
+// 关系类型高亮颜色
+const getRelationshipHighlightColor = (relationshipType) => {
+  const highlightColors = {
+    'HAS_PINYIN': '#E74C3C',        // 深红色
+    'HAS_RADICAL': '#17A2B8',       // 深青色
+    'SYNONYM': '#3498DB',           // 深蓝色
+    'ANTONYM': '#28A745',           // 深绿色
+    'DEPENDS_ON': '#F1C40F',        // 深黄色
+    'CONTAINS': '#8E44AD',          // 深紫色
+    'RELATES_TO': '#E67E22',        // 深橙色
+    'default': '#764ba2'            // 默认深蓝紫色
+  }
+  return highlightColors[relationshipType] || highlightColors.default
 }
 
 // 格式化属性值
@@ -603,6 +710,136 @@ const getRelationshipColor = (relationshipType) => {
     'default': '#667eea'
   }
   return colors[relationshipType] || colors.default
+}
+
+// 加载可用标签
+const loadAvailableLabels = async () => {
+  try {
+    // 首先尝试使用新的标签映射API
+    const mappingResponse = await apiService.getLabelMappings('node')
+    const nodeMappings = mappingResponse.node_labels || []
+    
+    if (nodeMappings.length > 0) {
+      // 使用映射数据，但需要获取计数信息
+      try {
+        // 使用新的节点类型API获取数量
+        const nodeTypesResponse = await apiService.getNodeTypes()
+        const countMap = {}
+        if (nodeTypesResponse.node_types) {
+          nodeTypesResponse.node_types.forEach(item => {
+            countMap[item.label] = item.count
+          })
+        }
+        
+        availableLabels.value = nodeMappings.map(mapping => ({
+          id: mapping.id,
+          neo4j_name: mapping.neo4j_name,
+          display_name: mapping.display_name,
+          count: countMap[mapping.neo4j_name] || 0,
+          description: mapping.description
+        }))
+        
+        // 同时加载每个节点标签的属性权限
+        for (const mapping of nodeMappings) {
+          await loadPropertyPermissions(mapping.id)
+        }
+      } catch (countError) {
+        console.error('获取节点数量失败，使用映射数据但不显示计数:', countError)
+        // 如果获取计数失败，使用映射数据但不显示计数
+        availableLabels.value = nodeMappings.map(mapping => ({
+          id: mapping.id,
+          neo4j_name: mapping.neo4j_name,
+          display_name: mapping.display_name,
+          count: 0,
+          description: mapping.description
+        }))
+        
+        // 即使计数失败，也要加载属性权限
+        for (const mapping of nodeMappings) {
+          await loadPropertyPermissions(mapping.id)
+        }
+      }
+    }
+  } catch (error) {
+    console.error('加载节点标签失败:', error)
+    availableLabels.value = []
+  }
+}
+
+// 加载标签属性映射
+const loadPropertyPermissions = async (labelMappingId) => {
+  try {
+    const response = await apiService.getPropertyPermissions(labelMappingId)
+    const properties = response.properties || []
+    
+    // 创建属性键到显示信息的映射
+    const propertyMap = {}
+    properties.forEach(prop => {
+      propertyMap[prop.property_key] = {
+        display_name: prop.display_name,
+        can_view: prop.can_view,
+        can_edit: prop.can_edit
+      }
+    })
+    
+    propertyPermissions.value[labelMappingId] = propertyMap
+  } catch (error) {
+    console.error(`加载标签 ${labelMappingId} 的属性信息失败:`, error)
+  }
+}
+
+// 检查属性是否可见
+const isPropertyVisible = (propertyKey, nodeLabels) => {
+  if (!nodeLabels || nodeLabels.length === 0) {
+    return true
+  }
+  
+  // 查找匹配的标签映射
+  const matchingLabel = availableLabels.value.find(label => 
+    nodeLabels.includes(label.neo4j_name)
+  )
+  
+  if (matchingLabel && propertyPermissions.value[matchingLabel.id]) {
+    const permission = propertyPermissions.value[matchingLabel.id][propertyKey]
+    return permission ? permission.can_view : false
+  }
+  
+  return true
+}
+
+// 获取属性的显示名称
+const getPropertyDisplayName = (propertyKey, nodeLabels) => {
+  if (!nodeLabels || nodeLabels.length === 0) {
+    return propertyKey
+  }
+  
+  // 查找匹配的标签映射
+  const matchingLabel = availableLabels.value.find(label => 
+    nodeLabels.includes(label.neo4j_name)
+  )
+  
+  if (matchingLabel && propertyPermissions.value[matchingLabel.id]) {
+    const permission = propertyPermissions.value[matchingLabel.id][propertyKey]
+    return permission ? permission.display_name || propertyKey : propertyKey
+  }
+  
+  return propertyKey
+}
+
+// 获取节点的可见属性
+const getVisibleProperties = (node) => {
+  if (!node || !node.properties) {
+    return {}
+  }
+  
+  const visibleProps = {}
+  Object.entries(node.properties).forEach(([key, value]) => {
+    if (isPropertyVisible(key, node.labels)) {
+      visibleProps[key] = value
+    }
+  })
+  
+  return visibleProps
 }
 </script>
 
