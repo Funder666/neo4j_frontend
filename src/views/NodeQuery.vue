@@ -77,7 +77,7 @@
               <el-icon><Setting /></el-icon>
               查询参数
             </h3>
-            <p class="section-subtitle">设置 {{ selectedLabelDisplayName }} 节点的查询参数</p>
+            <p class="section-subtitle">设置 {{ selectedLabelDisplayName }} 节点的查询参数（留空关键词将加载前{{ limit }}个节点）</p>
           </div>
           
           <div class="params-form">
@@ -118,8 +118,9 @@
                 class="query-btn"
               >
                 <el-icon><Search /></el-icon>
-                查询节点
-                <span v-if="searchQuery">(按关键词过滤)</span>
+                {{ searchQuery.trim() ? '查询节点' : '加载节点' }}
+                <span v-if="searchQuery.trim()">(按关键词过滤)</span>
+                <span v-else>(前{{ limit }}个)</span>
               </el-button>
             </div>
           </div>
@@ -475,18 +476,28 @@ const performSearch = async () => {
   searched.value = true
 
   try {
-    const response = await apiService.searchNodes(
-      searchQuery.value.trim() || null,
-      selectedLabel.value,
-      limit.value
-    )
+    let response
+    // 如果有搜索关键词，使用搜索API，否则使用获取节点API
+    if (searchQuery.value.trim()) {
+      response = await apiService.searchNodes(
+        searchQuery.value.trim(),
+        selectedLabel.value,
+        limit.value
+      )
+    } else {
+      // 没有搜索关键词时，获取指定标签的前50个节点
+      response = await apiService.getNodes(limit.value, selectedLabel.value)
+    }
     
     results.value = response.nodes || []
     
     if (results.value.length === 0) {
       ElMessage.info('未找到匹配的节点')
     } else {
-      ElMessage.success(`找到 ${results.value.length} 个节点`)
+      const message = searchQuery.value.trim() 
+        ? `找到 ${results.value.length} 个匹配节点`
+        : `加载了 ${results.value.length} 个节点`
+      ElMessage.success(message)
       // 创建图形可视化
       setTimeout(() => {
         createNetwork()
