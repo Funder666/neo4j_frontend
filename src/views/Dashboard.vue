@@ -98,7 +98,15 @@ src/views/Dashboard.vue<template>
                               class="property-row"
                             >
                               <div class="property-name">{{ getPropertyDisplayName(key, selectedExampleNode.labels) }}</div>
-                              <div class="property-val">{{ formatProperty(value) }}</div>
+                              <div class="property-val">
+                                <a v-if="isUrl(formatProperty(value))" 
+                                   :href="formatProperty(value)" 
+                                   target="_blank" 
+                                   class="property-url">
+                                  {{ formatProperty(value) }}
+                                </a>
+                                <span v-else>{{ formatProperty(value) }}</span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -304,29 +312,24 @@ const createExampleNetwork = () => {
     }
   })
   
-  // 创建其他节点
-  const otherNodeList = otherNodes.map(item => {
+  // 创建其他节点 - 分层分布，确保远离汉字中央区域
+  const pinyinNodes = otherNodes.filter(item => item.node.labels && item.node.labels.includes('Pinyin'))
+  const radicalNodes = otherNodes.filter(item => item.node.labels && item.node.labels.includes('Radical'))
+  const restNodes = otherNodes.filter(item => !item.node.labels || 
+    (!item.node.labels.includes('Pinyin') && !item.node.labels.includes('Radical')))
+  
+  const otherNodeList = []
+  
+  // 拼音节点：下方扇形分布
+  pinyinNodes.forEach((item, index) => {
     const { node, nodeLabel } = item
-    let position = {};
-    let nodeSize = 50;
-    let fontSize = 20;
+    const totalPinyin = pinyinNodes.length
+    const startAngle = 45; // 从45度开始
+    const endAngle = 135; // 到135度结束
+    const angle = startAngle + (endAngle - startAngle) * index / Math.max(totalPinyin - 1, 1)
+    const radius = 400 + (index % 2) * 100
     
-    if (node.labels && node.labels.includes('Pinyin')) {
-      // 拼音节点：放在汉字下方，避开中央区域，分散分布
-      position = { x: Math.random() * 1200 - 600, y: 300 + Math.random() * 200 };
-      nodeSize = 40;
-      fontSize = 16;
-    } else if (node.labels && node.labels.includes('Radical')) {
-      // 部首节点：放在汉字上方，避开中央区域，分散分布
-      position = { x: Math.random() * 1200 - 600, y: -300 - Math.random() * 200 };
-      nodeSize = 45;
-      fontSize = 18;
-    } else {
-      // 其他节点：随机分布在外围，避开汉字中央区域
-      position = { x: Math.random() * 1000 - 500, y: Math.random() * 600 - 300 };
-    }
-    
-    return {
+    otherNodeList.push({
       id: node.id,
       label: nodeLabel,
       group: (node.labels && node.labels[0]) || 'Unknown',
@@ -337,18 +340,84 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: fontSize, 
+        size: 16, 
         face: 'Arial, Microsoft YaHei, sans-serif',
         strokeWidth: 2,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: nodeSize,
-      x: position.x,
-      y: position.y,
+      size: 40,
+      x: Math.cos(angle * Math.PI / 180) * radius,
+      y: Math.sin(angle * Math.PI / 180) * radius + 300, // 确保在下方
       data: node
-    }
+    })
+  })
+  
+  // 部首节点：上方扇形分布
+  radicalNodes.forEach((item, index) => {
+    const { node, nodeLabel } = item
+    const totalRadical = radicalNodes.length
+    const startAngle = 225; // 从225度开始
+    const endAngle = 315; // 到315度结束
+    const angle = startAngle + (endAngle - startAngle) * index / Math.max(totalRadical - 1, 1)
+    const radius = 350 + (index % 2) * 80
+    
+    otherNodeList.push({
+      id: node.id,
+      label: nodeLabel,
+      group: (node.labels && node.labels[0]) || 'Unknown',
+      title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
+      color: {
+        background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
+        border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
+      },
+      font: { 
+        color: '#2c3e50', 
+        size: 18, 
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff',
+        bold: false
+      },
+      shape: 'circle',
+      size: 45,
+      x: Math.cos(angle * Math.PI / 180) * radius,
+      y: Math.sin(angle * Math.PI / 180) * radius - 250, // 确保在上方
+      data: node
+    })
+  })
+  
+  // 其他节点：左右两侧竖直分布
+  restNodes.forEach((item, index) => {
+    const { node, nodeLabel } = item
+    const side = index % 2 === 0 ? 1 : -1 // 左右交替
+    const layerIndex = Math.floor(index / 2) // 层级
+    const yPosition = (layerIndex - Math.floor(restNodes.length / 4)) * 120 // 垂直间距120px
+    
+    otherNodeList.push({
+      id: node.id,
+      label: nodeLabel,
+      group: (node.labels && node.labels[0]) || 'Unknown',
+      title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
+      color: {
+        background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
+        border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
+      },
+      font: { 
+        color: '#2c3e50', 
+        size: 20, 
+        face: 'Arial, Microsoft YaHei, sans-serif',
+        strokeWidth: 2,
+        strokeColor: '#ffffff',
+        bold: false
+      },
+      shape: 'circle',
+      size: 50,
+      x: side * (700 + (layerIndex % 3) * 100), // 左右两侧，多层分布
+      y: yPosition,
+      data: node
+    })
   })
   
   // 合并所有节点，汉字节点在前确保正确顺序
@@ -556,6 +625,16 @@ const formatProperty = (value) => {
     return JSON.stringify(value)
   }
   return String(value)
+}
+
+// 检查字符串是否为URL
+const isUrl = (str) => {
+  try {
+    new URL(str)
+    return true
+  } catch {
+    return false
+  }
 }
 
 // 查看示例节点关系
@@ -1497,6 +1576,17 @@ const getVisibleProperties = (node) => {
   color: #2c3e50;
   word-break: break-all;
   line-height: 1.3;
+}
+
+.property-url {
+  color: #667eea;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.property-url:hover {
+  color: #764ba2;
+  text-decoration: underline;
 }
 
 .loading-example {
