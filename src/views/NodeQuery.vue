@@ -176,6 +176,28 @@
         <div class="graph-view">
           <div ref="networkContainer" class="network-container"></div>
           
+          <!-- 关系类型图例 - 仅在显示关系时显示 -->
+          <div v-if="showingRelationships" class="relationship-legend">
+            <div class="legend-header">
+              <h4 class="legend-title">
+                <el-icon><InfoFilled /></el-icon>
+                关系类型图例
+              </h4>
+            </div>
+            <div class="legend-content">
+              <div 
+                v-for="(relationshipType, index) in getUniqueRelationshipTypes()"
+                :key="relationshipType"
+                class="legend-item"
+              >
+                <div class="legend-line" :style="getLegendLineStyle(relationshipType)"></div>
+                <span class="legend-label" :style="{ color: getRelationshipColor(relationshipType) }">
+                  {{ getRelationshipDisplayName(relationshipType) }}
+                </span>
+              </div>
+            </div>
+          </div>
+          
           <!-- 选中节点信息面板 -->
           <div v-if="selectedNode" class="node-info-panel">
             <div class="panel-header">
@@ -632,17 +654,32 @@ const darkenColor = (color, factor) => {
   return color // 简化实现
 }
 
-// 关系类型颜色映射
+// 关系类型颜色映射 - 增强版本，使用更鲜明的颜色
 const getRelationshipColor = (relationshipType) => {
   const colors = {
-    'HAS_PINYIN': '#FF6B6B',        // 红色 - 汉字与拼音
-    'HAS_RADICAL': '#4ECDC4',       // 青色 - 汉字与部首
-    'SYNONYM': '#45B7D1',           // 蓝色 - 近义词
-    'ANTONYM': '#96CEB4',           // 绿色 - 反义词
-    'DEPENDS_ON': '#F7DC6F',        // 黄色 - 学习依赖
-    'CONTAINS': '#BB8FCE',          // 紫色 - 包含关系
-    'RELATES_TO': '#F8C471',        // 橙色 - 相关关系
-    'default': '#667eea'            // 默认蓝紫色
+    // 原有的关系类型
+    'HAS_PINYIN': '#E74C3C',        // 鲜艳红色 - 汉字与拼音
+    'HAS_RADICAL': '#17A2B8',       // 鲜艳青色 - 汉字与部首
+    'SYNONYM': '#007BFF',           // 鲜艳蓝色 - 近义词
+    'ANTONYM': '#28A745',           // 鲜艳绿色 - 反义词
+    'DEPENDS_ON': '#FFC107',        // 鲜艳黄色 - 学习依赖
+    'CONTAINS': '#6F42C1',          // 鲜艳紫色 - 包含关系
+    'RELATES_TO': '#FD7E14',        // 鲜艳橙色 - 相关关系
+    
+    // 实际数据库中的关系类型
+    'NEAR_SYNONYMOUS_WITH': '#007BFF',    // 鲜艳蓝色 - 近义词关系
+    'ANTITHESIS_WITH': '#28A745',         // 鲜艳绿色 - 反义词关系
+    'COMPOSITION_COMPONENT': '#6F42C1',   // 鲜艳紫色 - 组成部分关系
+    'HYPERNYM_OF': '#DC3545',             // 红色 - 上位词关系
+    'HYPONYM_OF': '#FD7E14',              // 橙色 - 下位词关系
+    'MERONYM_OF': '#20C997',              // 青绿色 - 部分关系
+    'HOLONYM_OF': '#6610F2',              // 靛蓝色 - 整体关系
+    'SIMILAR_TO': '#17A2B8',              // 青色 - 相似关系
+    'RELATED_TO': '#FFC107',              // 黄色 - 相关关系
+    'DERIVES_FROM': '#E83E8C',            // 粉色 - 派生关系
+    'LEADS_TO': '#FD7E14',                // 橙色 - 导致关系
+    
+    'default': '#6C757D'            // 灰色 - 默认
   }
   return colors[relationshipType] || colors.default
 }
@@ -650,16 +687,91 @@ const getRelationshipColor = (relationshipType) => {
 // 关系类型高亮颜色
 const getRelationshipHighlightColor = (relationshipType) => {
   const highlightColors = {
-    'HAS_PINYIN': '#E74C3C',        // 深红色
-    'HAS_RADICAL': '#17A2B8',       // 深青色
-    'SYNONYM': '#3498DB',           // 深蓝色
-    'ANTONYM': '#28A745',           // 深绿色
-    'DEPENDS_ON': '#F1C40F',        // 深黄色
-    'CONTAINS': '#8E44AD',          // 深紫色
-    'RELATES_TO': '#E67E22',        // 深橙色
-    'default': '#764ba2'            // 默认深蓝紫色
+    // 原有的关系类型
+    'HAS_PINYIN': '#C82333',        // 更深红色
+    'HAS_RADICAL': '#138496',       // 更深青色
+    'SYNONYM': '#0056B3',           // 更深蓝色
+    'ANTONYM': '#1E7E34',           // 更深绿色
+    'DEPENDS_ON': '#E0A800',        // 更深黄色
+    'CONTAINS': '#59359A',          // 更深紫色
+    'RELATES_TO': '#E8590C',        // 更深橙色
+    
+    // 实际数据库中的关系类型
+    'NEAR_SYNONYMOUS_WITH': '#0056B3',    // 更深蓝色 - 近义词关系
+    'ANTITHESIS_WITH': '#1E7E34',         // 更深绿色 - 反义词关系
+    'COMPOSITION_COMPONENT': '#59359A',   // 更深紫色 - 组成部分关系
+    'HYPERNYM_OF': '#B02A37',             // 更深红色 - 上位词关系
+    'HYPONYM_OF': '#E8590C',              // 更深橙色 - 下位词关系
+    'MERONYM_OF': '#1AA085',              // 更深青绿色 - 部分关系
+    'HOLONYM_OF': '#520DC2',              // 更深靛蓝色 - 整体关系
+    'SIMILAR_TO': '#138496',              // 更深青色 - 相似关系
+    'RELATED_TO': '#E0A800',              // 更深黄色 - 相关关系
+    'DERIVES_FROM': '#D1326B',            // 更深粉色 - 派生关系
+    'LEADS_TO': '#E8590C',                // 更深橙色 - 导致关系
+    
+    'default': '#495057'            // 更深灰色
   }
   return highlightColors[relationshipType] || highlightColors.default
+}
+
+// 获取关系类型的线条样式
+const getRelationshipLineStyle = (relationshipType) => {
+  const lineStyles = {
+    // 原有的关系类型
+    'HAS_PINYIN': { dashes: false, width: 3 },       // 实线，较粗
+    'HAS_RADICAL': { dashes: [5, 5], width: 3 },     // 虚线
+    'SYNONYM': { dashes: false, width: 4 },          // 实线，更粗（重要关系）
+    'ANTONYM': { dashes: [10, 5], width: 4 },        // 长虚线，更粗（重要关系）
+    'DEPENDS_ON': { dashes: [2, 3], width: 2 },      // 点线
+    'CONTAINS': { dashes: [15, 3, 3, 3], width: 2 }, // 点划线
+    'RELATES_TO': { dashes: [8, 3], width: 2 },      // 短虚线
+    
+    // 实际数据库中的关系类型
+    'NEAR_SYNONYMOUS_WITH': { dashes: false, width: 4 },        // 实线，更粗（重要关系）
+    'ANTITHESIS_WITH': { dashes: [10, 5], width: 4 },          // 长虚线，更粗（重要关系）
+    'COMPOSITION_COMPONENT': { dashes: [15, 3, 3, 3], width: 3 }, // 点划线
+    'HYPERNYM_OF': { dashes: false, width: 3 },                // 实线，较粗
+    'HYPONYM_OF': { dashes: [8, 3], width: 3 },                // 短虚线，较粗
+    'MERONYM_OF': { dashes: [5, 5], width: 2 },                // 虚线
+    'HOLONYM_OF': { dashes: [12, 4], width: 2 },               // 长虚线
+    'SIMILAR_TO': { dashes: [3, 3], width: 2 },                // 短虚线
+    'RELATED_TO': { dashes: [2, 3], width: 2 },                // 点线
+    'DERIVES_FROM': { dashes: [6, 2, 2, 2], width: 2 },        // 点划线
+    'LEADS_TO': { dashes: [8, 4], width: 2 },                  // 中虚线
+    
+    'default': { dashes: false, width: 2 }           // 默认实线
+  }
+  return lineStyles[relationshipType] || lineStyles.default
+}
+
+// 获取关系类型的箭头样式
+const getRelationshipArrowStyle = (relationshipType) => {
+  const arrowStyles = {
+    // 原有的关系类型
+    'HAS_PINYIN': { type: 'arrow', scaleFactor: 1.5 },
+    'HAS_RADICAL': { type: 'triangle', scaleFactor: 1.3 },
+    'SYNONYM': { type: 'arrow', scaleFactor: 1.8 },      // 近义词用更大箭头
+    'ANTONYM': { type: 'triangle', scaleFactor: 1.8 },   // 反义词用三角形大箭头
+    'DEPENDS_ON': { type: 'arrow', scaleFactor: 1.2 },   
+    'CONTAINS': { type: 'triangle', scaleFactor: 1.4 },  
+    'RELATES_TO': { type: 'arrow', scaleFactor: 1.3 },   
+    
+    // 实际数据库中的关系类型
+    'NEAR_SYNONYMOUS_WITH': { type: 'arrow', scaleFactor: 1.8 },     // 近义词用更大箭头
+    'ANTITHESIS_WITH': { type: 'triangle', scaleFactor: 1.8 },       // 反义词用三角形大箭头
+    'COMPOSITION_COMPONENT': { type: 'triangle', scaleFactor: 1.4 },  // 组成关系用三角形
+    'HYPERNYM_OF': { type: 'arrow', scaleFactor: 1.6 },             // 上位词用大箭头
+    'HYPONYM_OF': { type: 'arrow', scaleFactor: 1.4 },              // 下位词用中等箭头
+    'MERONYM_OF': { type: 'triangle', scaleFactor: 1.3 },           // 部分关系用三角形
+    'HOLONYM_OF': { type: 'triangle', scaleFactor: 1.5 },           // 整体关系用大三角形
+    'SIMILAR_TO': { type: 'arrow', scaleFactor: 1.3 },              // 相似关系用中等箭头
+    'RELATED_TO': { type: 'arrow', scaleFactor: 1.2 },              // 相关关系用小箭头
+    'DERIVES_FROM': { type: 'arrow', scaleFactor: 1.4 },            // 派生关系用中等箭头
+    'LEADS_TO': { type: 'arrow', scaleFactor: 1.5 },                // 导致关系用大箭头
+    
+    'default': { type: 'arrow', scaleFactor: 1.2 }
+  }
+  return arrowStyles[relationshipType] || arrowStyles.default
 }
 
 const exportResults = () => {
@@ -994,7 +1106,9 @@ const createRelationshipNetwork = (centerNode, relationships) => {
     if (relationship && startNode && endNode) {
       const edgeColor = getRelationshipColor(relationship.type)
       const highlightColor = getRelationshipHighlightColor(relationship.type)
-      console.log(`Setting edge color for ${relationship.type}: ${edgeColor}`)
+      const lineStyle = getRelationshipLineStyle(relationship.type)
+      const arrowStyle = getRelationshipArrowStyle(relationship.type)
+      console.log(`Setting edge style for ${relationship.type}: color=${edgeColor}, line=${JSON.stringify(lineStyle)}, arrow=${JSON.stringify(arrowStyle)}`)
       
       edges.push({
         id: relationship.id || `edge_${index}`,
@@ -1004,28 +1118,34 @@ const createRelationshipNetwork = (centerNode, relationships) => {
         title: `关系类型: ${relationship.type}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
         color: {
           color: edgeColor,
-          highlight: highlightColor
+          highlight: highlightColor,
+          opacity: 0.8
         },
         font: {
-          color: '#2c3e50',
-          size: 14,
-          strokeWidth: 2,
-          strokeColor: '#ffffff'
+          color: edgeColor,  // 让标签颜色与边保持一致
+          size: 12,
+          bold: true,
+          strokeWidth: 3,
+          strokeColor: '#ffffff',
+          background: 'rgba(255, 255, 255, 0.8)',
+          borderWidth: 1,
+          borderColor: edgeColor
         },
         arrows: {
           to: {
             enabled: true,
-            scaleFactor: 1.2,
-            type: 'arrow'
+            scaleFactor: arrowStyle.scaleFactor,
+            type: arrowStyle.type
           }
         },
         arrowStrikethrough: false,
         smooth: {
           enabled: true,
           type: 'dynamic',
-          roundness: 0.2
+          roundness: 0.3
         },
-        width: 2,
+        width: lineStyle.width,
+        dashes: lineStyle.dashes,
         data: relationship
       })
     }
@@ -1393,6 +1513,82 @@ const canCreateNode = () => {
   return false
 }
 
+// 获取当前关系图中的唯一关系类型
+const getUniqueRelationshipTypes = () => {
+  if (!relationshipData.value || !relationshipData.value.relationships) {
+    return []
+  }
+  
+  const types = new Set()
+  relationshipData.value.relationships.forEach(record => {
+    let relationshipType = null
+    
+    // 处理不同的数据结构
+    if (record.r && record.r.type) {
+      relationshipType = record.r.type
+    } else if (record.relationship && record.relationship.type) {
+      relationshipType = record.relationship.type
+    } else if (record.type) {
+      relationshipType = record.type
+    }
+    
+    if (relationshipType) {
+      types.add(relationshipType)
+    }
+  })
+  
+  return Array.from(types).sort()
+}
+
+// 获取关系类型的显示名称
+const getRelationshipDisplayName = (relationshipType) => {
+  const displayNames = {
+    // 原有的关系类型
+    'HAS_PINYIN': '拼音关系',
+    'HAS_RADICAL': '部首关系',
+    'SYNONYM': '近义词',
+    'ANTONYM': '反义词',
+    'DEPENDS_ON': '学习依赖',
+    'CONTAINS': '包含关系',
+    'RELATES_TO': '相关关系',
+    
+    // 实际数据库中的关系类型
+    'NEAR_SYNONYMOUS_WITH': '近义词',
+    'ANTITHESIS_WITH': '反义词',
+    'COMPOSITION_COMPONENT': '组成部分',
+    'HYPERNYM_OF': '上位词',
+    'HYPONYM_OF': '下位词', 
+    'MERONYM_OF': '部分关系',
+    'HOLONYM_OF': '整体关系',
+    'SIMILAR_TO': '相似关系',
+    'RELATED_TO': '相关关系',
+    'DERIVES_FROM': '派生关系',
+    'LEADS_TO': '导致关系'
+  }
+  return displayNames[relationshipType] || relationshipType
+}
+
+// 获取图例线条样式
+const getLegendLineStyle = (relationshipType) => {
+  const color = getRelationshipColor(relationshipType)
+  const lineStyle = getRelationshipLineStyle(relationshipType)
+  
+  let borderStyle = 'solid'
+  if (lineStyle.dashes) {
+    if (lineStyle.dashes.length === 2) {
+      borderStyle = 'dashed'
+    } else if (lineStyle.dashes.length === 4) {
+      borderStyle = 'dotted'
+    }
+  }
+  
+  return {
+    backgroundColor: color,
+    borderTop: `${lineStyle.width}px ${borderStyle} ${color}`,
+    height: `${Math.max(2, lineStyle.width)}px`
+  }
+}
+
 onMounted(() => {
   loadAvailableLabels()
 })
@@ -1716,6 +1912,74 @@ onMounted(() => {
   width: 100%;
   height: 600px;
   background: #fafbfc;
+}
+
+/* 关系类型图例 */
+.relationship-legend {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  max-width: 250px;
+  z-index: 10;
+}
+
+.legend-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.legend-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.legend-line {
+  width: 30px;
+  min-width: 30px;
+  border-radius: 2px;
+  position: relative;
+}
+
+.legend-line::after {
+  content: '→';
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: inherit;
+  font-weight: bold;
+}
+
+.legend-label {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .node-info-panel {
