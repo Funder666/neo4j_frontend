@@ -757,6 +757,11 @@ import {
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
+
+// 调试：检查API服务方法
+console.log('RelationshipQuery - API服务加载完成')
+console.log('可用方法:', Object.getOwnPropertyNames(Object.getPrototypeOf(apiService)).filter(name => name !== 'constructor'))
+console.log('updateRelationship方法类型:', typeof apiService.updateRelationship)
 import AppLayout from '../components/AppLayout.vue'
 import { Network } from 'vis-network'
 
@@ -976,6 +981,13 @@ const queryRelationship = async () => {
     console.log('执行查询:', query, '参数:', parameters)
     
     const response = await apiService.runQuery(query, parameters)
+    
+    console.log('查询响应:', response)
+    console.log('原始记录数量:', response.records?.length)
+    if (response.records?.length > 0) {
+      console.log('第一条记录:', response.records[0])
+      console.log('第一条记录的关系属性:', response.records[0].r?.properties)
+    }
     
     // 处理查询结果，应用权限过滤
     queryResults.value = response.records.map(record => {
@@ -1568,15 +1580,34 @@ const editRelationshipDialog = reactive({
 const editRelationshipForm = ref(null)
 
 const editRelationship = (relationship) => {
+  console.log('编辑关系 - 原始数据:', relationship)
+  
   // 设置当前编辑的关系ID和完整信息
   editRelationshipDialog.currentRelationshipId = relationship.id
   editRelationshipDialog.currentRelationship = relationship
   
+  // 提取属性，处理不同可能的数据结构
+  let properties = {}
+  
+  if (relationship.properties) {
+    properties = relationship.properties
+  } else if (relationship.data && relationship.data.properties) {
+    properties = relationship.data.properties
+  }
+  
+  console.log('提取的属性:', properties)
+  
   // 将现有属性转换为表单格式
-  const properties = relationship.properties || {}
-  editRelationshipDialog.form.properties = Object.keys(properties).length > 0 
-    ? Object.entries(properties).map(([key, value]) => ({ key, value }))
-    : [{ key: '', value: '' }]
+  if (properties && typeof properties === 'object' && Object.keys(properties).length > 0) {
+    editRelationshipDialog.form.properties = Object.entries(properties).map(([key, value]) => ({ 
+      key, 
+      value: typeof value === 'string' ? value : JSON.stringify(value)
+    }))
+  } else {
+    editRelationshipDialog.form.properties = [{ key: '', value: '' }]
+  }
+  
+  console.log('表单属性:', editRelationshipDialog.form.properties)
   
   editRelationshipDialog.visible = true
 }
@@ -1586,6 +1617,20 @@ const saveEditedRelationship = async () => {
   try {
     editRelationshipDialog.loading = true
     
+    // 防御性检查
+    if (!apiService) {
+      throw new Error('API服务未初始化')
+    }
+    
+    if (typeof apiService.updateRelationship !== 'function') {
+      console.error('apiService methods:', Object.keys(apiService))
+      throw new Error('updateRelationship方法不存在')
+    }
+    
+    if (!editRelationshipDialog.currentRelationshipId) {
+      throw new Error('关系ID不能为空')
+    }
+    
     // 准备属性
     const properties = {}
     editRelationshipDialog.form.properties.forEach(prop => {
@@ -1594,15 +1639,51 @@ const saveEditedRelationship = async () => {
       }
     })
 
-    await apiService.updateRelationship(editRelationshipDialog.currentRelationshipId, properties)
+    console.log('更新关系:', {
+      relationshipId: editRelationshipDialog.currentRelationshipId,
+      properties
+    })
+
+    const updateResponse = await apiService.updateRelationship(editRelationshipDialog.currentRelationshipId, properties)
+    console.log('更新响应:', updateResponse)
     ElMessage.success('关系更新成功')
+    
+    // 更新本地数据中的关系属性
+    if (editRelationshipDialog.currentRelationship) {
+      editRelationshipDialog.currentRelationship.properties = properties
+    }
+    
+    // 在queryResults中也更新对应的关系数据
+    const updatedResults = queryResults.value.map(record => {
+      let relationship = null
+      
+      // 根据不同的数据结构查找关系
+      if (record.r) {
+        relationship = record.r
+      } else if (record.relationship) {
+        relationship = record.relationship
+      } else if (record.id) {
+        relationship = record
+      }
+      
+      // 如果找到匹配的关系，更新其属性
+      if (relationship && relationship.id === editRelationshipDialog.currentRelationshipId) {
+        relationship.properties = properties
+      }
+      
+      return record
+    })
+    queryResults.value = updatedResults
     
     editRelationshipDialog.visible = false
     
-    // 重新查询以更新结果
-    if (selectedRelType.value) {
-      await queryRelationship()
+    // 重新创建网络图以显示更新
+    if (queryResults.value.length > 0) {
+      setTimeout(() => {
+        createNetwork()
+      }, 100)
     }
+    
     selectedElement.value = null
   } catch (error) {
     console.error('编辑关系失败:', error)
