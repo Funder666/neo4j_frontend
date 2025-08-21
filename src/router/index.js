@@ -3,6 +3,7 @@ import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import NodeQuery from '../views/NodeQuery.vue'
 import RelationshipQuery from '../views/RelationshipQuery.vue'
+import CypherQuery from '../views/CypherQuery.vue'
 import SystemConfig from '../views/SystemConfig.vue'
 
 const routes = [
@@ -31,6 +32,12 @@ const routes = [
     path: '/relationships',
     name: 'RelationshipQuery',
     component: RelationshipQuery,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/cypher',
+    name: 'CypherQuery',
+    component: CypherQuery,
     meta: { requiresAuth: true }
   },
   {

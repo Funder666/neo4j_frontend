@@ -89,6 +89,12 @@
               <span class="menu-text">关系查询</span>
             </div>
           </el-menu-item>
+          <el-menu-item index="/cypher" class="menu-item">
+            <div class="menu-content">
+              <el-icon class="menu-icon"><EditPen /></el-icon>
+              <span class="menu-text">通用查询</span>
+            </div>
+          </el-menu-item>
           <el-menu-item index="/config" class="menu-item">
             <div class="menu-content">
               <el-icon class="menu-icon"><Setting /></el-icon>
@@ -118,7 +124,8 @@ import {
   Share,
   DataLine,
   Setting,
-  SwitchButton
+  SwitchButton,
+  EditPen
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
 import apiService from '../services/api'

@@ -793,6 +793,13 @@ const selectedRelTypeDisplayName = computed(() => {
   return relType ? (relType.display_name || relType.type) : selectedRelType.value
 })
 
+// 文本截断工具函数
+const truncateText = (text, maxLength = 10) => {
+  if (!text || typeof text !== 'string') return text
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength) + '...'
+}
+
 // 节点编辑对话框
 const nodeDialog = reactive({
   visible: false,
@@ -1073,8 +1080,9 @@ const createNetwork = () => {
       // 处理起始节点 n
       const nodeId = record.n.id
       if (!nodes.has(nodeId)) {
-        const nodeLabel = record.n.properties.name || record.n.properties.value || record.n.properties.title || `${record.n.labels[0] || 'Node'}`
-        const tooltip = `ID: ${nodeId}\n标签: ${record.n.labels.join(', ')}\n属性: ${Object.keys(record.n.properties).length} 个`
+        const fullLabel = record.n.properties.name || record.n.properties.value || record.n.properties.title || `${record.n.labels[0] || 'Node'}`
+        const nodeLabel = truncateText(fullLabel, 10)
+        const tooltip = `${fullLabel}\nID: ${nodeId}\n标签: ${record.n.labels.join(', ')}\n属性: ${Object.keys(record.n.properties).length} 个`
         
         nodes.set(nodeId, {
           id: nodeId,
@@ -1091,14 +1099,14 @@ const createNetwork = () => {
           },
           font: { 
             color: '#2c3e50', 
-            size: 20,
+            size: 16,
             face: 'Arial, Microsoft YaHei, sans-serif',
-            strokeWidth: 2,
+            strokeWidth: 1,
             strokeColor: '#ffffff',
             bold: true
           },
           shape: 'circle',
-          size: 50,
+          size: 40,
           borderWidth: 3,
           data: record.n
         })
@@ -1109,8 +1117,9 @@ const createNetwork = () => {
       // 处理目标节点 m
       const nodeId = record.m.id
       if (!nodes.has(nodeId)) {
-        const nodeLabel = record.m.properties.name || record.m.properties.value || record.m.properties.title || `${record.m.labels[0] || 'Node'}`
-        const tooltip = `ID: ${nodeId}\n标签: ${record.m.labels.join(', ')}\n属性: ${Object.keys(record.m.properties).length} 个`
+        const fullLabel = record.m.properties.name || record.m.properties.value || record.m.properties.title || `${record.m.labels[0] || 'Node'}`
+        const nodeLabel = truncateText(fullLabel, 10)
+        const tooltip = `${fullLabel}\nID: ${nodeId}\n标签: ${record.m.labels.join(', ')}\n属性: ${Object.keys(record.m.properties).length} 个`
         
         nodes.set(nodeId, {
           id: nodeId,
@@ -1127,14 +1136,14 @@ const createNetwork = () => {
           },
           font: { 
             color: '#2c3e50', 
-            size: 20,
+            size: 16,
             face: 'Arial, Microsoft YaHei, sans-serif',
-            strokeWidth: 2,
+            strokeWidth: 1,
             strokeColor: '#ffffff',
             bold: true
           },
           shape: 'circle',
-          size: 50,
+          size: 40,
           borderWidth: 3,
           data: record.m
         })

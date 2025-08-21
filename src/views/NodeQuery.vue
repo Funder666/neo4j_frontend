@@ -446,6 +446,13 @@ const selectedLabelDisplayName = computed(() => {
   return label ? (label.display_name || label.neo4j_name) : selectedLabel.value
 })
 
+// 文本截断工具函数
+const truncateText = (text, maxLength = 10) => {
+  if (!text || typeof text !== 'string') return text
+  if (text.length <= maxLength) return text
+  return text.substring(0, maxLength) + '...'
+}
+
 // 节点编辑对话框
 const nodeDialog = reactive({
   visible: false,
@@ -549,9 +556,9 @@ const createNetwork = () => {
     const node = record.n || record;
     return {
       id: node.id,
-      label: (node.properties && node.properties.name) || (node.properties && node.properties.value ? node.properties.value.trim() : '') || `${node.id}`,
+      label: truncateText((node.properties && node.properties.name) || (node.properties && node.properties.value ? node.properties.value.trim() : '') || `${node.id}`, 10),
       group: (node.labels && node.labels[0]) || 'Unknown',
-      title: `ID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
+      title: `${(node.properties && node.properties.name) || (node.properties && node.properties.value ? node.properties.value.trim() : '') || `${node.id}`}\nID: ${node.id}\n标签: ${node.labels ? node.labels.join(', ') : 'Unknown'}\n属性: ${node.properties ? Object.keys(node.properties).length : 0} 个`,
       color: {
         background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
         border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
@@ -976,11 +983,11 @@ const createRelationshipNetwork = (centerNode, relationships) => {
   // 添加中心节点
   nodes.set(centerNode.id, {
     id: centerNode.id,
-    label: (centerNode.properties && centerNode.properties.name) || 
+    label: truncateText((centerNode.properties && centerNode.properties.name) || 
            (centerNode.properties && centerNode.properties.value ? centerNode.properties.value.trim() : '') || 
-           `节点 ${centerNode.id}`,
+           `节点 ${centerNode.id}`, 10),
     group: (centerNode.labels && centerNode.labels[0]) || 'Unknown',
-    title: `ID: ${centerNode.id}\n标签: ${centerNode.labels ? centerNode.labels.join(', ') : 'Unknown'}\n属性: ${centerNode.properties ? Object.keys(centerNode.properties).length : 0} 个`,
+    title: `${(centerNode.properties && centerNode.properties.name) || (centerNode.properties && centerNode.properties.value ? centerNode.properties.value.trim() : '') || `节点 ${centerNode.id}`}\nID: ${centerNode.id}\n标签: ${centerNode.labels ? centerNode.labels.join(', ') : 'Unknown'}\n属性: ${centerNode.properties ? Object.keys(centerNode.properties).length : 0} 个`,
     color: {
       background: '#FF6B6B', // 中心节点使用特殊颜色
       border: '#E55654'
@@ -1043,14 +1050,15 @@ const createRelationshipNetwork = (centerNode, relationships) => {
 
     // 添加起始节点（如果不存在）
     if (startNode && startNode.id && !nodes.has(startNode.id)) {
-      const nodeLabel = (startNode.properties && startNode.properties.name) || 
+      const fullLabel = (startNode.properties && startNode.properties.name) || 
                        (startNode.properties && startNode.properties.value) || 
                        `节点 ${startNode.id}`
+      const nodeLabel = truncateText(fullLabel, 10)
       nodes.set(startNode.id, {
         id: startNode.id,
         label: nodeLabel,
         group: (startNode.labels && startNode.labels[0]) || 'Unknown',
-        title: `ID: ${startNode.id}\n标签: ${startNode.labels ? startNode.labels.join(', ') : 'Unknown'}\n属性: ${startNode.properties ? Object.keys(startNode.properties).length : 0} 个`,
+        title: `${fullLabel}\nID: ${startNode.id}\n标签: ${startNode.labels ? startNode.labels.join(', ') : 'Unknown'}\n属性: ${startNode.properties ? Object.keys(startNode.properties).length : 0} 个`,
         color: {
           background: getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'),
           border: darkenColor(getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'), 0.3)
@@ -1070,14 +1078,15 @@ const createRelationshipNetwork = (centerNode, relationships) => {
 
     // 添加结束节点（如果不存在）
     if (endNode && endNode.id && !nodes.has(endNode.id)) {
-      const nodeLabel = (endNode.properties && endNode.properties.name) || 
+      const fullLabel = (endNode.properties && endNode.properties.name) || 
                        (endNode.properties && endNode.properties.value) || 
                        `节点 ${endNode.id}`
+      const nodeLabel = truncateText(fullLabel, 10)
       nodes.set(endNode.id, {
         id: endNode.id,
         label: nodeLabel,
         group: (endNode.labels && endNode.labels[0]) || 'Unknown',
-        title: `ID: ${endNode.id}\n标签: ${endNode.labels ? endNode.labels.join(', ') : 'Unknown'}\n属性: ${endNode.properties ? Object.keys(endNode.properties).length : 0} 个`,
+        title: `${fullLabel}\nID: ${endNode.id}\n标签: ${endNode.labels ? endNode.labels.join(', ') : 'Unknown'}\n属性: ${endNode.properties ? Object.keys(endNode.properties).length : 0} 个`,
         color: {
           background: getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'),
           border: darkenColor(getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'), 0.3)
