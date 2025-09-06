@@ -73,7 +73,7 @@
               </div>
             </div>
             
-            <!-- 执行按钮 -->
+            <!-- 执行按钮和Schema下载 -->
             <div class="execute-actions">
               <el-button 
                 type="primary"
@@ -86,6 +86,16 @@
                 <el-icon><VideoPlay /></el-icon>
                 执行查询
                 <span v-if="cypherQuery.trim()">(Ctrl + Enter)</span>
+              </el-button>
+              <el-button 
+                type="success"
+                size="large"
+                @click="downloadSchema"
+                :loading="downloadingSchema"
+                class="schema-download-btn"
+              >
+                <el-icon><Download /></el-icon>
+                下载知识图谱Schema
               </el-button>
             </div>
           </div>
@@ -377,6 +387,7 @@ const selectedNode = ref(null)
 const networkContainer = ref(null)
 const network = ref(null)
 const viewMode = ref('graph') // 默认图形视图
+const downloadingSchema = ref(false)
 
 // 权限和标签映射相关
 const availableLabels = ref([])
@@ -951,13 +962,24 @@ const getRelationshipDisplayName = (relationshipType) => {
   return displayNames[relationshipType] || relationshipType
 }
 
-// 获取图例线条样式
+// 获取图例线条样式 - 参照NodeQuery.vue的实现
 const getLegendLineStyle = (relationshipType) => {
   const color = getRelationshipColor(relationshipType)
+  const lineStyle = getRelationshipLineStyle(relationshipType)
+  
+  let borderStyle = 'solid'
+  if (lineStyle.dashes) {
+    if (lineStyle.dashes.length === 2) {
+      borderStyle = 'dashed'
+    } else if (lineStyle.dashes.length === 4) {
+      borderStyle = 'dotted'
+    }
+  }
+  
   return {
     backgroundColor: color,
-    borderTop: `3px solid ${color}`,
-    height: '3px'
+    borderTop: `${lineStyle.width}px ${borderStyle} ${color}`,
+    height: `${Math.max(2, lineStyle.width)}px`
   }
 }
 
@@ -1260,6 +1282,143 @@ const loadLabelMappings = async () => {
   }
 }
 
+// 下载知识图谱Schema
+const downloadSchema = async () => {
+  downloadingSchema.value = true
+  try {
+    // 获取所有节点标签和关系类型数据
+    const [labelsResponse, relationshipTypesResponse, nodeMappingsResponse, relationshipMappingsResponse] = await Promise.all([
+      apiService.getAllLabels(),
+      apiService.getRelationshipTypes(),
+      apiService.getLabelMappings('node'),
+      apiService.getLabelMappings('relationship')
+    ])
+
+    // 构建Schema对象
+    const schema = {
+      generated_at: new Date().toISOString(),
+      version: '1.0',
+      description: '知识图谱完整Schema结构',
+      
+      // 节点类型信息
+      node_types: [],
+      
+      // 关系类型信息
+      relationship_types: [],
+      
+      // 统计信息
+      statistics: {
+        total_node_types: 0,
+        total_relationship_types: 0,
+        total_properties: 0
+      }
+    }
+
+    // 处理节点类型
+    const nodeLabels = labelsResponse.labels_with_counts || []
+    const nodeMappings = nodeMappingsResponse.node_labels || []
+    
+    for (const labelInfo of nodeLabels) {
+      const labelName = labelInfo.label
+      const mapping = nodeMappings.find(m => m.neo4j_name === labelName)
+      
+      const nodeType = {
+        neo4j_name: labelName,
+        display_name: mapping ? mapping.display_name : labelName,
+        description: mapping ? mapping.description : null,
+        count: labelInfo.count,
+        properties: []
+      }
+
+      // 如果有映射配置，获取属性信息
+      if (mapping) {
+        try {
+          const propertiesResponse = await apiService.getPropertyPermissions(mapping.id)
+          const properties = propertiesResponse.properties || []
+          
+          nodeType.properties = properties.map(prop => ({
+            neo4j_name: prop.property_key,
+            display_name: prop.display_name,
+            description: prop.description,
+            data_type: prop.data_type,
+            is_required: prop.is_required,
+            default_value: prop.default_value,
+            can_view: prop.can_view,
+            can_edit: prop.can_edit
+          }))
+        } catch (error) {
+          console.warn(`获取节点类型 ${labelName} 的属性信息失败:`, error)
+        }
+      }
+
+      schema.node_types.push(nodeType)
+    }
+
+    // 处理关系类型
+    const relationshipTypes = relationshipTypesResponse.relationship_types || []
+    const relationshipMappings = relationshipMappingsResponse.relationship_labels || []
+    
+    for (const relInfo of relationshipTypes) {
+      const relType = relInfo.type
+      const mapping = relationshipMappings.find(m => m.neo4j_name === relType)
+      
+      const relationshipType = {
+        neo4j_name: relType,
+        display_name: mapping ? mapping.display_name : getRelationshipDisplayName(relType),
+        description: mapping ? mapping.description : null,
+        count: relInfo.count,
+        properties: []
+      }
+
+      // 如果有映射配置，获取属性信息
+      if (mapping) {
+        try {
+          const propertiesResponse = await apiService.getPropertyPermissions(mapping.id)
+          const properties = propertiesResponse.properties || []
+          
+          relationshipType.properties = properties.map(prop => ({
+            neo4j_name: prop.property_key,
+            display_name: prop.display_name,
+            description: prop.description,
+            data_type: prop.data_type,
+            is_required: prop.is_required,
+            default_value: prop.default_value,
+            can_view: prop.can_view,
+            can_edit: prop.can_edit
+          }))
+        } catch (error) {
+          console.warn(`获取关系类型 ${relType} 的属性信息失败:`, error)
+        }
+      }
+
+      schema.relationship_types.push(relationshipType)
+    }
+
+    // 更新统计信息
+    schema.statistics.total_node_types = schema.node_types.length
+    schema.statistics.total_relationship_types = schema.relationship_types.length
+    schema.statistics.total_properties = schema.node_types.reduce((sum, nt) => sum + nt.properties.length, 0) +
+                                        schema.relationship_types.reduce((sum, rt) => sum + rt.properties.length, 0)
+
+    // 导出Schema为JSON文件
+    const dataStr = JSON.stringify(schema, null, 2)
+    const dataBlob = new Blob([dataStr], { type: 'application/json;charset=utf-8' })
+    const url = URL.createObjectURL(dataBlob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `knowledge_graph_schema_${new Date().toISOString().split('T')[0]}.json`
+    link.click()
+    URL.revokeObjectURL(url)
+    
+    ElMessage.success(`Schema导出成功！包含 ${schema.statistics.total_node_types} 种节点类型和 ${schema.statistics.total_relationship_types} 种关系类型`)
+  } catch (error) {
+    console.error('下载Schema失败:', error)
+    ElMessage.error('下载Schema失败: ' + error.message)
+  } finally {
+    downloadingSchema.value = false
+  }
+}
+
 // 在组件挂载时预加载标签映射
 onMounted(() => {
   loadLabelMappings()
@@ -1400,21 +1559,37 @@ onMounted(() => {
 .execute-actions {
   display: flex;
   justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
-.execute-btn {
+.execute-btn,
+.schema-download-btn {
   height: 48px;
   padding: 0 32px;
   border-radius: 12px;
   font-weight: 600;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border: none;
   transition: all 0.3s ease;
+  min-width: 200px;
+}
+
+.execute-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.schema-download-btn {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
 }
 
 .execute-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.schema-download-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(40, 167, 69, 0.3);
 }
 
 .section-title {
@@ -1624,6 +1799,74 @@ onMounted(() => {
   border: 1px solid #e8ecf0;
   border-radius: 12px;
   overflow: hidden;
+}
+
+/* 关系类型图例 - 参照NodeQuery.vue样式 */
+.relationship-legend {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+  max-width: 250px;
+  z-index: 10;
+}
+
+.legend-header {
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.legend-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.legend-line {
+  width: 30px;
+  min-width: 30px;
+  border-radius: 2px;
+  position: relative;
+}
+
+.legend-line::after {
+  content: '→';
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: inherit;
+  font-weight: bold;
+}
+
+.legend-label {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .network-container {
