@@ -27,31 +27,26 @@
           <div class="editor-header">
             <h3 class="section-title">
               <el-icon><EditPen /></el-icon>
-              Cypher 查询编辑器
+              Cypher查询/智能查询
             </h3>
-            <p class="section-subtitle">输入 Cypher 查询语句来检索图数据库中的数据</p>
+            <p class="section-subtitle">输入Cypher语句或使用自然语言进行查询</p>
           </div>
           
           <div class="editor-content">
-            <!-- 查询输入区域 -->
-            <div class="query-input-group">
-              <div class="input-label">
-                <el-icon><EditPen /></el-icon>
-                查询语句
-              </div>
-              <el-input
-                v-model="cypherQuery"
-                type="textarea"
-                :rows="8"
-                placeholder="输入 Cypher 查询语句，例如:&#10;MATCH (n) RETURN n LIMIT 10&#10;&#10;或者:&#10;MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 5"
-                class="cypher-textarea"
-                @keydown.ctrl.enter="executeQuery"
-              />
-<!--              <div class="input-help">-->
-<!--                <span>按 Ctrl + Enter 执行查询</span>-->
-<!--              </div>-->
+            <!-- 查询模式选择 -->
+            <div class="query-mode-selector">
+              <el-radio-group v-model="queryMode" class="mode-group">
+                <el-radio-button label="cypher">
+                  <el-icon><EditPen /></el-icon>
+                  Cypher查询
+                </el-radio-button>
+                <el-radio-button label="smart">
+                  <el-icon><MagicStick /></el-icon>
+                  智能查询
+                </el-radio-button>
+              </el-radio-group>
             </div>
-            
+
             <!-- 快捷查询模板 -->
             <div class="query-templates">
               <div class="template-header">
@@ -72,10 +67,68 @@
                 </div>
               </div>
             </div>
+
+            <!-- 查询输入区域容器 -->
+            <div class="query-input-container">
+              <!-- Cypher查询输入区域 -->
+              <div v-if="queryMode === 'cypher'" class="query-input-group">
+                <div class="input-label">
+                  <el-icon><EditPen /></el-icon>
+                  查询语句
+                </div>
+                <el-input
+                  v-model="cypherQuery"
+                  type="textarea"
+                  :rows="8"
+                  placeholder="输入 Cypher 查询语句，例如:&#10;MATCH (n) RETURN n LIMIT 10&#10;&#10;或者:&#10;MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 5"
+                  class="cypher-textarea"
+                  @keydown.ctrl.enter="executeQuery"
+                />
+              </div>
+
+              <!-- 智能查询输入区域 -->
+              <div v-if="queryMode === 'smart'" class="smart-query-group">
+                <div class="input-label">
+                  <el-icon><MagicStick /></el-icon>
+                  自然语言查询
+                </div>
+                <el-input
+                  v-model="smartQuery"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="用自然语言描述你想查询的内容，例如:&#10;查找所有包含&quot;学习&quot;字的汉字&#10;找到&quot;天&quot;字的所有关系&#10;显示HSK等级为1的前10个汉字"
+                  class="smart-textarea"
+                  @keydown.ctrl.enter="executeSmartQuery"
+                />
+                
+                <!-- 生成的Cypher查询预览 -->
+                <div v-if="generatedCypher" class="generated-cypher-preview">
+                  <div class="preview-header">
+                    <div class="input-label">
+                      <el-icon><View /></el-icon>
+                      生成的Cypher查询
+                    </div>
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click="editGeneratedQuery"
+                      class="edit-query-btn"
+                    >
+                      <el-icon><EditPen /></el-icon>
+                      编辑
+                    </el-button>
+                  </div>
+                  <div class="cypher-preview">
+                    <pre>{{ generatedCypher }}</pre>
+                  </div>
+                </div>
+              </div>
+            </div>
             
             <!-- 执行按钮和Schema下载 -->
             <div class="execute-actions">
               <el-button 
+                v-if="queryMode === 'cypher'"
                 type="primary"
                 size="large"
                 @click="executeQuery"
@@ -87,6 +140,21 @@
                 执行查询
                 <span v-if="cypherQuery.trim()">(Ctrl + Enter)</span>
               </el-button>
+              
+              <el-button 
+                v-if="queryMode === 'smart'"
+                type="primary"
+                size="large"
+                @click="executeSmartQuery"
+                :loading="generatingQuery"
+                class="execute-btn smart-execute-btn"
+                :disabled="!smartQuery.trim()"
+              >
+                <el-icon><MagicStick /></el-icon>
+                执行智能查询
+                <span v-if="smartQuery.trim()">(Ctrl + Enter)</span>
+              </el-button>
+
               <el-button 
                 type="success"
                 size="large"
@@ -368,7 +436,9 @@ import {
   Search,
   Delete,
   DocumentCopy,
-  ArrowDown
+  ArrowDown,
+  MagicStick,
+  View
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -388,6 +458,10 @@ const networkContainer = ref(null)
 const network = ref(null)
 const viewMode = ref('graph') // 默认图形视图
 const downloadingSchema = ref(false)
+const queryMode = ref('cypher') // 查询模式: 'cypher' | 'smart'
+const smartQuery = ref('') // 智能查询输入
+const generatedCypher = ref('') // 生成的Cypher查询
+const generatingQuery = ref(false) // 生成查询中
 
 // 权限和标签映射相关
 const availableLabels = ref([])
@@ -420,24 +494,24 @@ const queryTemplates = ref([
     query: 'MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 10'
   },
   {
-    name: '按标签查询',
-    description: '查询指定标签的节点',
-    query: 'MATCH (n:Character) RETURN n LIMIT 10'
+    name: 'HSK1级汉字',
+    description: '查询HSK1级汉字',
+    query: "MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n LIMIT 20"
   },
   {
-    name: '路径查询',
-    description: '查找两个节点间的路径',
-    query: 'MATCH path = (n)-[*1..3]-(m) RETURN path LIMIT 5'
+    name: '简单笔画汉字',
+    description: '笔画数少于5的汉字',
+    query: 'MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n LIMIT 20'
+  },
+  {
+    name: '汉字关系查询',
+    description: '查找汉字间的关系',
+    query: 'MATCH (n:Character)-[r]-(m:Character) RETURN n, r, m LIMIT 15'
   },
   {
     name: '统计查询',
     description: '统计各类型节点数量',
     query: 'MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC'
-  },
-  {
-    name: '关系统计',
-    description: '统计各类型关系数量',
-    query: 'MATCH ()-[r]->() RETURN type(r) as type, count(r) as count ORDER BY count DESC'
   }
 ])
 
@@ -1419,6 +1493,192 @@ const downloadSchema = async () => {
   }
 }
 
+// 调用阿里云大模型生成Cypher查询
+const generateCypherWithAI = async (naturalLanguageQuery, schema) => {
+  const DASHSCOPE_API_KEY = 'sk-f55b7b2a02a4478fbdcb48c30d90bb49'
+  const API_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions'
+  
+  const systemPrompt = `你是一个Neo4j Cypher查询专家。根据用户的自然语言问题，生成准确的Cypher查询语句。
+
+知识图谱Schema信息：
+${JSON.stringify(schema, null, 2)}
+
+重要规则：
+1. 只返回纯净的Cypher查询语句，不要包含任何解释或markdown格式
+2. 查询结果限制在合理范围内（通常LIMIT 50以内）
+3. 理解用户的中文描述但必须使用neo4j_name生成查询（如：用户说"汉字"要理解为Character标签）
+4. 对于模糊匹配，使用CONTAINS或正则表达式
+5. 确保查询语法正确且能在Neo4j中执行
+
+数据类型注意事项：
+- HSK等级、新标准等级、笔画数等数字字段在Neo4j中存储为字符串，请使用字符串比较
+- 所有等级和数字字段都需要用引号包围，如: n.hskLevel = '1', n.strokes = '5'
+- 对于范围查询，可以使用字符串比较或转换: toInteger(n.strokes) < 5
+
+正确示例：
+用户问题："查找所有HSK等级为1的汉字"
+理解：用户说的"汉字"对应Character标签
+Cypher: MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n LIMIT 50
+
+用户问题："找到笔画数少于5的汉字"  
+理解：查询Character标签，使用数字比较
+Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n LIMIT 50
+
+用户问题："查找'天'字的近义词关系"
+理解：近义词关系对应NEAR_SYNONYMOUS_WITH
+Cypher: MATCH (n:Character {value: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m LIMIT 30`
+
+  try {
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${DASHSCOPE_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'qwen-plus',
+        messages: [
+          {
+            role: 'system',
+            content: systemPrompt
+          },
+          {
+            role: 'user',
+            content: naturalLanguageQuery
+          }
+        ],
+        temperature: 0.1, // 降低创造性，提高准确性
+        max_tokens: 500
+      })
+    })
+
+    if (!response.ok) {
+      throw new Error(`AI服务请求失败: ${response.status}`)
+    }
+
+    const data = await response.json()
+    const generatedQuery = data.choices[0].message.content.trim()
+    
+    // 清理可能的markdown格式或额外文字
+    const cypherMatch = generatedQuery.match(/```(?:cypher)?\n?(.*?)\n?```/s)
+    if (cypherMatch) {
+      return cypherMatch[1].trim()
+    }
+    
+    return generatedQuery
+  } catch (error) {
+    console.error('AI查询生成失败:', error)
+    throw new Error(`智能查询生成失败: ${error.message}`)
+  }
+}
+
+// 执行智能查询
+const executeSmartQuery = async () => {
+  if (!smartQuery.value.trim()) {
+    ElMessage.warning('请输入自然语言查询')
+    return
+  }
+
+  generatingQuery.value = true
+
+  try {
+    // 每次都重新生成Cypher查询
+    ElMessage.info('正在使用AI生成Cypher查询...')
+    
+    // 获取知识图谱Schema
+    const [labelsResponse, relationshipTypesResponse, nodeMappingsResponse, relationshipMappingsResponse] = await Promise.all([
+      apiService.getAllLabels(),
+      apiService.getRelationshipTypes(),
+      apiService.getLabelMappings('node'),
+      apiService.getLabelMappings('relationship')
+    ])
+
+    // 构建简化的Schema用于AI
+    const aiSchema = {
+      node_types: (labelsResponse.labels_with_counts || []).map(label => {
+        const mapping = (nodeMappingsResponse.node_labels || []).find(m => m.neo4j_name === label.label)
+        return {
+          neo4j_name: label.label,
+          display_name: mapping?.display_name || label.label,
+          // 保留count有助于AI生成合适的LIMIT值
+          count: label.count
+        }
+      }),
+      relationship_types: (relationshipTypesResponse.relationship_types || []).map(rel => ({
+        neo4j_name: rel.type,
+        display_name: getRelationshipDisplayName(rel.type)
+        // 关系的count对查询帮助不大，可以省略
+      }))
+    }
+
+    // 调用AI生成查询
+    generatedCypher.value = await generateCypherWithAI(smartQuery.value, aiSchema)
+    ElMessage.success('AI查询生成成功！')
+
+    // 立即执行生成的Cypher查询
+    loading.value = true
+    searched.value = true
+
+    try {
+      const response = await apiService.runQuery(generatedCypher.value, {})
+      
+      results.value = response.records || []
+      graphData.value = response.graph_data || null
+      
+      if (results.value.length === 0) {
+        ElMessage.info('智能查询未返回结果')
+      } else {
+        ElMessage.success(`智能查询成功，返回 ${results.value.length} 条记录`)
+        
+        // 默认显示图形视图
+        viewMode.value = 'graph'
+        nextTick(() => {
+          createNetwork()
+        })
+      }
+    } catch (queryError) {
+      console.error('执行生成的Cypher查询失败:', queryError)
+      ElMessage.error('执行查询失败: ' + queryError.message)
+    } finally {
+      loading.value = false
+    }
+  } catch (error) {
+    console.error('智能查询失败:', error)
+    ElMessage.error('智能查询失败: ' + error.message)
+  } finally {
+    generatingQuery.value = false
+  }
+}
+
+// 编辑生成的查询
+const editGeneratedQuery = () => {
+  cypherQuery.value = generatedCypher.value
+  queryMode.value = 'cypher'
+  ElMessage.success('已切换到Cypher查询模式，您可以编辑查询语句')
+}
+
+// 监听查询模式变化，清理相关状态
+watch(queryMode, (newMode) => {
+  // 清空当前结果
+  results.value = []
+  graphData.value = null
+  searched.value = false
+  selectedNode.value = null
+  
+  if (newMode === 'cypher') {
+    smartQuery.value = ''
+    generatedCypher.value = ''
+  } else if (newMode === 'smart') {
+    cypherQuery.value = ''
+  }
+  
+  // 清理网络图
+  if (network.value) {
+    network.value.destroy()
+    network.value = null
+  }
+})
+
 // 在组件挂载时预加载标签映射
 onMounted(() => {
   loadLabelMappings()
@@ -1443,6 +1703,40 @@ onMounted(() => {
   max-width: 1200px;
 }
 
+/* 查询模式选择器 */
+.query-mode-selector {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.mode-group :deep(.el-radio-button) {
+  margin: 0;
+}
+
+.mode-group :deep(.el-radio-button__inner) {
+  height: 44px;
+  line-height: 44px;
+  padding: 0 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.mode-group :deep(.el-radio-button__inner:hover) {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.mode-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+}
+
 .editor-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(20px);
@@ -1464,7 +1758,7 @@ onMounted(() => {
 }
 
 .query-input-group {
-  margin-bottom: 24px;
+  margin-bottom: 0;
 }
 
 .input-label,
@@ -1499,6 +1793,86 @@ onMounted(() => {
   border-color: #667eea;
   background: rgba(255, 255, 255, 1);
   box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+/* 查询输入区域容器 */
+.query-input-container {
+  background: rgba(248, 250, 252, 0.6);
+  border: 1px solid #e8ecf0;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+/* 智能查询输入区域 */
+.smart-query-group {
+  margin-bottom: 0;
+}
+
+.smart-textarea :deep(.el-textarea__inner) {
+  font-family: 'Microsoft YaHei', 'Arial', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  border-radius: 12px;
+  border: 2px solid #e8ecf0;
+  background: rgba(248, 250, 252, 0.8);
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  resize: vertical;
+}
+
+.smart-textarea :deep(.el-textarea__inner:hover) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.smart-textarea :deep(.el-textarea__inner:focus) {
+  border-color: #667eea;
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+}
+
+/* 生成的Cypher查询预览 */
+.generated-cypher-preview {
+  margin-top: 16px;
+  background: rgba(248, 250, 252, 0.9);
+  border: 1px solid #e8ecf0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(102, 126, 234, 0.05);
+  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+}
+
+.edit-query-btn {
+  color: #667eea;
+  font-weight: 500;
+}
+
+.edit-query-btn:hover {
+  color: #764ba2;
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.cypher-preview {
+  padding: 16px;
+}
+
+.cypher-preview pre {
+  margin: 0;
+  font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #2c3e50;
+  background: transparent;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .input-help {
