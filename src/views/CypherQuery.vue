@@ -494,24 +494,24 @@ const queryTemplates = ref([
     query: 'MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 10'
   },
   {
-    name: 'HSK1级汉字',
-    description: '查询HSK1级汉字',
-    query: "MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n LIMIT 20"
+    name: '按标签查询',
+    description: '查询指定标签的节点',
+    query: 'MATCH (n:Character) RETURN n LIMIT 10'
   },
   {
-    name: '简单笔画汉字',
-    description: '笔画数少于5的汉字',
-    query: 'MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n LIMIT 20'
-  },
-  {
-    name: '汉字关系查询',
-    description: '查找汉字间的关系',
-    query: 'MATCH (n:Character)-[r]-(m:Character) RETURN n, r, m LIMIT 15'
+    name: '路径查询',
+    description: '查找两个节点间的路径',
+    query: 'MATCH path = (n)-[*1..3]-(m) RETURN path LIMIT 5'
   },
   {
     name: '统计查询',
     description: '统计各类型节点数量',
     query: 'MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC'
+  },
+  {
+    name: '关系统计',
+    description: '统计各类型关系数量',
+    query: 'MATCH ()-[r]->() RETURN type(r) as type, count(r) as count ORDER BY count DESC'
   }
 ])
 
