@@ -162,6 +162,69 @@ const exampleNetwork = ref(null)
 const availableLabels = ref([])
 const propertyPermissions = ref({})
 
+// 缓存相关常量和变量
+const CACHE_KEY = 'dashboard_character_example'
+const CACHE_EXPIRY_KEY = 'dashboard_character_example_expiry'
+const CACHE_DURATION = 24 * 60 * 60 * 1000 // 24小时缓存
+
+// 缓存工具函数
+const saveToCache = (data) => {
+  try {
+    const cacheData = {
+      characterResults: data.characterResults,
+      relationshipsData: data.relationshipsData,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cacheData))
+    localStorage.setItem(CACHE_EXPIRY_KEY, (Date.now() + CACHE_DURATION).toString())
+  } catch (error) {
+    console.warn('保存缓存失败:', error)
+  }
+}
+
+const loadFromCache = () => {
+  try {
+    const expiry = localStorage.getItem(CACHE_EXPIRY_KEY)
+    if (!expiry || Date.now() > parseInt(expiry)) {
+      // 缓存过期，清除缓存
+      localStorage.removeItem(CACHE_KEY)
+      localStorage.removeItem(CACHE_EXPIRY_KEY)
+      return null
+    }
+    
+    const cacheData = localStorage.getItem(CACHE_KEY)
+    if (cacheData) {
+      return JSON.parse(cacheData)
+    }
+  } catch (error) {
+    console.warn('加载缓存失败:', error)
+    // 清除损坏的缓存
+    localStorage.removeItem(CACHE_KEY)
+    localStorage.removeItem(CACHE_EXPIRY_KEY)
+  }
+  return null
+}
+
+const clearCache = () => {
+  try {
+    localStorage.removeItem(CACHE_KEY)
+    localStorage.removeItem(CACHE_EXPIRY_KEY)
+    console.log('缓存已清除')
+  } catch (error) {
+    console.warn('清除缓存失败:', error)
+  }
+}
+
+const refreshCache = async () => {
+  // 清除现有缓存
+  clearCache()
+  
+  // 重新加载数据
+  await loadCharacterExample()
+  
+  ElMessage.success('缓存已刷新')
+}
+
 onMounted(async () => {
   // 首先加载标签映射
   await loadAvailableLabels()
@@ -174,6 +237,26 @@ const loadCharacterExample = async () => {
   exampleLoading.value = true
   
   try {
+    // 首先尝试从缓存加载
+    const cachedData = loadFromCache()
+    if (cachedData) {
+      console.log('从缓存加载汉字示例数据')
+      characterResults.value = cachedData.characterResults
+      relationshipsData.value = cachedData.relationshipsData
+      
+      ElMessage.success(`从缓存加载了"国际中文教育知识图谱"中的 ${cachedData.characterResults.length} 个节点和 ${cachedData.relationshipsData.length} 个关系`)
+      
+      // 创建图形可视化
+      setTimeout(() => {
+        createExampleNetwork()
+      }, 100)
+      
+      exampleLoading.value = false
+      return
+    }
+    
+    console.log('缓存未找到，从数据库查询汉字示例')
+    
     // 定义要查询的汉字
     const targetCharacters = ['国', '际', '中', '文', '教', '育', '知', '识', '图', '谱']
     
@@ -226,7 +309,15 @@ const loadCharacterExample = async () => {
     if (characterResults.value.length === 0) {
       ElMessage.info('未找到"国际中文教育知识图谱"相关汉字节点')
     } else {
+      // 保存到缓存
+      saveToCache({
+        characterResults: characterResults.value,
+        relationshipsData: relationshipsData.value
+      })
+      
       ElMessage.success(`加载了"国际中文教育知识图谱"中的 ${characterResults.value.length} 个节点和 ${relationships.length} 个关系`)
+      console.log('数据已保存到缓存')
+      
       // 创建图形可视化
       setTimeout(() => {
         createExampleNetwork()
@@ -278,7 +369,7 @@ const createExampleNetwork = () => {
   const sortedCharacterNodeList = sortedCharacterNodes.map((item, index) => {
     const { node, nodeLabel } = item
     const position = {
-      x: (index - 4.5) * 150, // 增加间距，按索引顺序排列
+      x: (index - 4.5) * 1300, // 增加间距到1300px，适应550大小的节点
       y: 0 // 保持水平居中
     }
     
@@ -293,21 +384,18 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 28, 
+        size: 180, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 2,
+        strokeWidth: 10,
         strokeColor: '#ffffff',
         bold: true
       },
       shape: 'circle',
-      size: 70,
+      size: 550,
       x: position.x,
       y: position.y,
-      fixed: {
-        x: true,
-        y: true
-      },
-      physics: false,
+      fixed: true, // 完全固定位置
+      physics: false, // 完全不参与物理计算
       data: node
     }
   })
@@ -320,14 +408,23 @@ const createExampleNetwork = () => {
   
   const otherNodeList = []
   
-  // 拼音节点：下方扇形分布
+  // 拼音节点：严格限制在下方区域，完全避开水平线
   pinyinNodes.forEach((item, index) => {
     const { node, nodeLabel } = item
     const totalPinyin = pinyinNodes.length
-    const startAngle = 45; // 从45度开始
-    const endAngle = 135; // 到135度结束
-    const angle = startAngle + (endAngle - startAngle) * index / Math.max(totalPinyin - 1, 1)
-    const radius = 400 + (index % 2) * 100
+    
+    // 严格限制在下方弧形区域：40度到140度，完全避开0度和180度的水平线
+    let angle;
+    if (totalPinyin <= 1) {
+      angle = 90; // 单个节点放在正下方
+    } else {
+      // 下方弧形分布：40度到140度
+      const startAngle = 40;
+      const endAngle = 140;
+      angle = startAngle + (endAngle - startAngle) * index / (totalPinyin - 1);
+    }
+    
+    const radius = 3200 + (index % 3) * 300 // 大幅增大最小半径至3200px，彻底远离汉字中心区域
     
     otherNodeList.push({
       id: node.id,
@@ -340,28 +437,46 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 16, 
+        size: 110, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 2,
+        strokeWidth: 7,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: 40,
+      size: 320,
       x: Math.cos(angle * Math.PI / 180) * radius,
-      y: Math.sin(angle * Math.PI / 180) * radius + 300, // 确保在下方
+      y: Math.sin(angle * Math.PI / 180) * radius + 600, // 大幅增加下方偏移，增加垂直分散
       data: node
     })
   })
   
-  // 部首节点：上方扇形分布
+  // 部首节点：严格限制在上方区域，完全避开水平线
   radicalNodes.forEach((item, index) => {
     const { node, nodeLabel } = item
     const totalRadical = radicalNodes.length
-    const startAngle = 225; // 从225度开始
-    const endAngle = 315; // 到315度结束
-    const angle = startAngle + (endAngle - startAngle) * index / Math.max(totalRadical - 1, 1)
-    const radius = 350 + (index % 2) * 80
+    
+    // 检查是否是"国"和"图"的共有部首（如"囗"等），进行特殊处理
+    const isSharedRadical = (nodeLabel === '囗' || nodeLabel === '口' || 
+                            (node.properties && (node.properties.name === '囗' || node.properties.name === '口')));
+    
+    let angle, radius;
+    if (isSharedRadical) {
+      // 共有部首节点特殊定位：放在右上方更远的外围，完全避开水平中心区域
+      angle = 320; // 右上方更偏一些
+      radius = 3800; // 进一步大幅增加距离，确保在更远的外围
+    } else {
+      // 其他部首节点正常分布
+      if (totalRadical <= 1) {
+        angle = 270; // 单个节点放在正上方
+      } else {
+        // 上方弧形分布：220度到320度
+        const startAngle = 220;
+        const endAngle = 320; 
+        angle = startAngle + (endAngle - startAngle) * index / (totalRadical - 1);
+      }
+      radius = 3200 + (index % 3) * 300; // 大幅增大最小半径至3200px，彻底远离汉字中心区域
+    }
     
     otherNodeList.push({
       id: node.id,
@@ -374,16 +489,16 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 18, 
+        size: 115, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 2,
+        strokeWidth: 7,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: 45,
-      x: Math.cos(angle * Math.PI / 180) * radius,
-      y: Math.sin(angle * Math.PI / 180) * radius - 250, // 确保在上方
+      size: 330,
+      x: Math.cos(angle * Math.PI / 180) * radius, // 所有部首都按角度定位
+      y: Math.sin(angle * Math.PI / 180) * radius - (isSharedRadical ? 0 : 600), // 大幅增加上方偏移，增加垂直分散
       data: node
     })
   })
@@ -393,7 +508,7 @@ const createExampleNetwork = () => {
     const { node, nodeLabel } = item
     const side = index % 2 === 0 ? 1 : -1 // 左右交替
     const layerIndex = Math.floor(index / 2) // 层级
-    const yPosition = (layerIndex - Math.floor(restNodes.length / 4)) * 120 // 垂直间距120px
+    const yPosition = (layerIndex - Math.floor(restNodes.length / 4)) * 250 // 大幅增加垂直间距至250px，增加分散度
     
     otherNodeList.push({
       id: node.id,
@@ -406,15 +521,15 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 20, 
+        size: 120, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 2,
+        strokeWidth: 7,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: 50,
-      x: side * (700 + (layerIndex % 3) * 100), // 左右两侧，多层分布
+      size: 340,
+      x: side * (3500 + (layerIndex % 3) * 300), // 大幅增大左右距离至3500px，彻底远离汉字中心区域
       y: yPosition,
       data: node
     })
@@ -456,9 +571,9 @@ const createExampleNetwork = () => {
       smooth: {
         enabled: true,
         type: 'curvedCW',
-        roundness: 0.1
+        roundness: 0.3 // 增加弯曲度，让边更加优雅
       },
-      width: 2,
+      width: 4, // 增加连接线宽度配合更大节点
       data: relationship
     }
   })
@@ -496,23 +611,23 @@ const createExampleNetwork = () => {
       arrows: {
         to: { 
           enabled: true, 
-          scaleFactor: 1.0,
+          scaleFactor: 1.2, // 增大箭头尺寸
           type: 'arrow'
         }
       },
       smooth: {
         enabled: true,
         type: 'curvedCW',
-        roundness: 0.1
+        roundness: 0.3 // 增加弯曲度，让边更加优雅
       },
       font: {
         color: '#2c3e50',
-        size: 12,
-        strokeWidth: 2,
+        size: 20, // 进一步增大边标签字体
+        strokeWidth: 3,
         strokeColor: '#ffffff'
       },
-      width: 2,
-      selectionWidth: 3
+      width: 4, // 进一步增加边的宽度
+      selectionWidth: 7 // 进一步增加选中时的宽度
     },
     interaction: {
       hover: true,
@@ -537,22 +652,22 @@ const createExampleNetwork = () => {
     physics: {
       enabled: true,
       stabilization: { 
-        iterations: 500,
+        iterations: 800,
         updateInterval: 10,
         fit: true
       },
       barnesHut: {
-        gravitationalConstant: -1000,
-        centralGravity: 0.1,
-        springLength: 200,
-        springConstant: 0.02,
-        damping: 0.9,
-        avoidOverlap: 1.5
+        gravitationalConstant: -8000, // 进一步增加斥力，适应更大节点
+        centralGravity: 0.002, // 进一步减少中心吸引力
+        springLength: 1000, // 进一步增加弹簧长度
+        springConstant: 0.0005, // 进一步减少弹簧常数
+        damping: 0.998, // 进一步增大阻尼
+        avoidOverlap: 5.0 // 进一步增强避免重叠
       },
-      maxVelocity: 10,
-      minVelocity: 0.01,
+      maxVelocity: 8,
+      minVelocity: 0.005,
       solver: 'barnesHut',
-      timestep: 0.1
+      timestep: 0.08
     }
   }
 
@@ -564,7 +679,26 @@ const createExampleNetwork = () => {
     exampleNetwork.value.setOptions({ 
       physics: { enabled: false }
     });
-    console.log('网络布局已稳定，物理引擎已禁用，节点保持静止')
+    
+    // 强制重新设置汉字节点的固定位置，确保它们不会被移动
+    const targetCharacters = ['国', '际', '中', '文', '教', '育', '知', '识', '图', '谱']
+    const characterNodeIds = []
+    
+    // 收集汉字节点ID
+    nodes.forEach(node => {
+      if (targetCharacters.includes(node.label)) {
+        characterNodeIds.push(node.id)
+      }
+    })
+    
+    // 强制设置汉字节点位置并固定
+    characterNodeIds.forEach((nodeId, index) => {
+      const x = (index - 4.5) * 1300
+      const y = 0
+      exampleNetwork.value.moveNode(nodeId, x, y)
+    })
+    
+    console.log('网络布局已稳定，物理引擎已禁用，汉字节点位置已强制固定')
   })
 
   // 监听节点选择事件
@@ -1050,7 +1184,7 @@ const getVisibleProperties = (node) => {
 /* 主容器 */
 .dashboard-container {
   width: 100%;
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 0;
 }
@@ -1248,8 +1382,16 @@ const getVisibleProperties = (node) => {
 }
 
 .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   text-align: center;
   margin-bottom: 32px;
+}
+
+.section-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .section-header h3 {
@@ -1365,7 +1507,7 @@ const getVisibleProperties = (node) => {
 .example-grid {
   display: grid;
   gap: 24px;
-  max-width: 1200px;
+  max-width: 1500px;
   margin: 0 auto;
 }
 
@@ -1424,12 +1566,12 @@ const getVisibleProperties = (node) => {
   border: 1px solid #e8ecf0;
   border-radius: 12px;
   overflow: hidden;
-  min-height: 500px;
+  min-height: 1300px;
 }
 
 .example-network-container {
   width: 100%;
-  height: 500px;
+  height: 1300px;
   background: #fafbfc;
 }
 
