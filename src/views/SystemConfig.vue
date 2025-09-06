@@ -329,7 +329,7 @@ const connectionStatus = reactive({
 })
 
 const systemInfo = reactive({
-  appName: 'Neo4j 数据库管理系统',
+  appName: '国际中文教育知识图谱',
   version: '1.0.0',
   vueVersion: '3.5.17',
   elementVersion: '2.10.3',
