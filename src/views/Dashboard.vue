@@ -369,7 +369,7 @@ const createExampleNetwork = () => {
   const sortedCharacterNodeList = sortedCharacterNodes.map((item, index) => {
     const { node, nodeLabel } = item
     const position = {
-      x: (index - 4.5) * 1300, // 增加间距到1300px，适应550大小的节点
+      x: (index - 4.5) * 1600, // 调整间距到1600px，保证节点在可视范围内
       y: 0 // 保持水平居中
     }
     
@@ -384,14 +384,14 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 180, 
+        size: 280, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 10,
+        strokeWidth: 15,
         strokeColor: '#ffffff',
         bold: true
       },
       shape: 'circle',
-      size: 550,
+      size: 2000,
       x: position.x,
       y: position.y,
       fixed: true, // 完全固定位置
@@ -437,16 +437,16 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 110, 
+        size: 180, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 7,
+        strokeWidth: 12,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: 320,
+      size: 800,
       x: Math.cos(angle * Math.PI / 180) * radius,
-      y: Math.sin(angle * Math.PI / 180) * radius + 600, // 大幅增加下方偏移，增加垂直分散
+      y: Math.sin(angle * Math.PI / 180) * radius + 215, // 适应520px容器高度
       data: node
     })
   })
@@ -489,16 +489,16 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 115, 
+        size: 185, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 7,
+        strokeWidth: 12,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: 330,
+      size: 820,
       x: Math.cos(angle * Math.PI / 180) * radius, // 所有部首都按角度定位
-      y: Math.sin(angle * Math.PI / 180) * radius - (isSharedRadical ? 0 : 600), // 大幅增加上方偏移，增加垂直分散
+      y: Math.sin(angle * Math.PI / 180) * radius - (isSharedRadical ? 0 : 215), // 适应520px容器高度
       data: node
     })
   })
@@ -521,15 +521,15 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 120, 
+        size: 190, 
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 7,
+        strokeWidth: 12,
         strokeColor: '#ffffff',
         bold: false
       },
       shape: 'circle',
-      size: 340,
-      x: side * (3500 + (layerIndex % 3) * 300), // 大幅增大左右距离至3500px，彻底远离汉字中心区域
+      size: 840,
+      x: side * (2800 + (layerIndex % 3) * 200), // 适应1200px容器宽度，减少左右距离
       y: yPosition,
       data: node
     })
@@ -693,7 +693,7 @@ const createExampleNetwork = () => {
     
     // 强制设置汉字节点位置并固定
     characterNodeIds.forEach((nodeId, index) => {
-      const x = (index - 4.5) * 1300
+      const x = (index - 4.5) * 1600
       const y = 0
       exampleNetwork.value.moveNode(nodeId, x, y)
     })
@@ -1184,7 +1184,7 @@ const getVisibleProperties = (node) => {
 /* 主容器 */
 .dashboard-container {
   width: 100%;
-  max-width: 1600px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0;
 }
@@ -1195,7 +1195,7 @@ const getVisibleProperties = (node) => {
 .welcome-banner {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 24px;
-  padding: 40px;
+  padding: 24px;
   color: white;
   position: relative;
   overflow: hidden;
@@ -1566,12 +1566,12 @@ const getVisibleProperties = (node) => {
   border: 1px solid #e8ecf0;
   border-radius: 12px;
   overflow: hidden;
-  min-height: 1300px;
+  min-height: 520px;
 }
 
 .example-network-container {
   width: 100%;
-  height: 1300px;
+  height: 520px;
   background: #fafbfc;
 }
 
