@@ -47,8 +47,8 @@
               </el-radio-group>
             </div>
 
-            <!-- 快捷查询模板 -->
-            <div class="query-templates">
+            <!-- 快捷查询模板 - 只在Cypher查询模式下显示 -->
+            <div v-if="queryMode === 'cypher'" class="query-templates">
               <div class="template-header">
                 <div class="param-label">
                   <el-icon><DocumentCopy /></el-icon>
@@ -95,7 +95,7 @@
                 <el-input
                   v-model="smartQuery"
                   type="textarea"
-                  :rows="4"
+                  :rows="6"
                   placeholder="用自然语言描述你想查询的内容，例如:&#10;查找所有包含&quot;学习&quot;字的汉字&#10;找到&quot;天&quot;字的所有关系&#10;显示HSK等级为1的前10个汉字"
                   class="smart-textarea"
                   @keydown.ctrl.enter="executeSmartQuery"
@@ -1505,7 +1505,7 @@ ${JSON.stringify(schema, null, 2)}
 
 重要规则：
 1. 只返回纯净的Cypher查询语句，不要包含任何解释或markdown格式
-2. 查询结果限制在合理范围内（通常LIMIT 50以内）
+2. 查询结果数量不作限制
 3. 理解用户的中文描述但必须使用neo4j_name生成查询（如：用户说"汉字"要理解为Character标签）
 4. 对于模糊匹配，使用CONTAINS或正则表达式
 5. 确保查询语法正确且能在Neo4j中执行
@@ -1518,15 +1518,15 @@ ${JSON.stringify(schema, null, 2)}
 正确示例：
 用户问题："查找所有HSK等级为1的汉字"
 理解：用户说的"汉字"对应Character标签
-Cypher: MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n LIMIT 50
+Cypher: MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n
 
 用户问题："找到笔画数少于5的汉字"  
 理解：查询Character标签，使用数字比较
-Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n LIMIT 50
+Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n
 
 用户问题："查找'天'字的近义词关系"
 理解：近义词关系对应NEAR_SYNONYMOUS_WITH
-Cypher: MATCH (n:Character {value: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m LIMIT 30`
+Cypher: MATCH (n:Character {name: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m`
 
   try {
     const response = await fetch(API_URL, {
