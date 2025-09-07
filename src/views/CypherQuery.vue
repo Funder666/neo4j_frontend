@@ -1428,7 +1428,7 @@ const downloadSchema = async () => {
       schema.node_types.push(nodeType)
     }
 
-    // 处理关系类型
+    // 处理关系类型 - 获取关系的节点类型信息
     const relationshipTypes = relationshipTypesResponse.relationship_types || []
     const relationshipMappings = relationshipMappingsResponse.relationship_labels || []
     
@@ -1441,7 +1441,71 @@ const downloadSchema = async () => {
         display_name: mapping ? mapping.display_name : getRelationshipDisplayName(relType),
         description: mapping ? mapping.description : null,
         count: relInfo.count,
+        // 添加关系的节点类型信息
+        from_node_types: [],
+        to_node_types: [],
         properties: []
+      }
+
+      // 查询该关系类型的实际连接模式
+      try {
+        console.log(`正在获取关系类型 ${relType} 的节点连接信息...`)
+        
+        // 使用Cypher查询获取该关系类型连接的节点类型
+        const nodeTypesQuery = `
+          MATCH (start)-[r:${relType}]->(end) 
+          WITH DISTINCT labels(start) as startLabels, labels(end) as endLabels
+          RETURN startLabels, endLabels
+          LIMIT 100
+        `
+        
+        const nodeTypesResponse = await apiService.runQuery(nodeTypesQuery, {})
+        const nodeTypesRecords = nodeTypesResponse.records || []
+        
+        const fromNodeTypes = new Set()
+        const toNodeTypes = new Set()
+        
+        nodeTypesRecords.forEach(record => {
+          const startLabels = record.startLabels || []
+          const endLabels = record.endLabels || []
+          
+          // 添加起始节点类型（取第一个标签作为主要类型）
+          if (startLabels.length > 0) {
+            fromNodeTypes.add(startLabels[0])
+          }
+          
+          // 添加结束节点类型（取第一个标签作为主要类型）
+          if (endLabels.length > 0) {
+            toNodeTypes.add(endLabels[0])
+          }
+        })
+        
+        relationshipType.from_node_types = Array.from(fromNodeTypes).map(nodeType => {
+          const nodeMapping = nodeMappings.find(m => m.neo4j_name === nodeType)
+          return {
+            neo4j_name: nodeType,
+            display_name: nodeMapping ? nodeMapping.display_name : nodeType
+          }
+        })
+        
+        relationshipType.to_node_types = Array.from(toNodeTypes).map(nodeType => {
+          const nodeMapping = nodeMappings.find(m => m.neo4j_name === nodeType)
+          return {
+            neo4j_name: nodeType,
+            display_name: nodeMapping ? nodeMapping.display_name : nodeType
+          }
+        })
+        
+        console.log(`关系 ${relType}:`, {
+          from: relationshipType.from_node_types,
+          to: relationshipType.to_node_types
+        })
+        
+      } catch (error) {
+        console.warn(`获取关系类型 ${relType} 的节点连接信息失败:`, error)
+        // 如果查询失败，设置为空数组
+        relationshipType.from_node_types = []
+        relationshipType.to_node_types = []
       }
 
       // 如果有映射配置，获取属性信息
