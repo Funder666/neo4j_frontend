@@ -1600,7 +1600,7 @@ Cypher: MATCH (n:Character {name: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'qwen-plus',
+        model: 'qwen3-coder-plus',
         messages: [
           {
             role: 'system',
