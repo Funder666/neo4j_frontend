@@ -1590,7 +1590,11 @@ Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n
 
 用户问题："查找'天'字的近义词关系"
 理解：近义词关系对应NEAR_SYNONYMOUS_WITH
-Cypher: MATCH (n:Character {name: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m`
+Cypher: MATCH (n:Character {name: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m
+
+用户问题："国际中文教育中文水平1级的词语"
+理解：国际中文教育等级通过关系连接，等级节点的value为1，要词语和等级的关系！
+Cypher: MATCH (n:Word)-[r:FROM_LEVEL]->(l:InternationalLevel {value: '1'}) RETURN n, r, l limit 100`
 
   try {
     const response = await fetch(API_URL, {
