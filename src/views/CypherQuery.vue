@@ -175,18 +175,48 @@
         <div class="results-card">
           <div class="results-header">
             <div class="results-title">
-              <h3 class="section-title">
-                <el-icon><Search /></el-icon>
-                查询结果
-              </h3>
-              <div class="results-stats">
-                <span class="result-count">{{ results.length }}</span>
-                <span class="result-text">条记录</span>
-                <span v-if="graphData?.nodes" class="graph-stats">
-                  | {{ graphData.nodes.length }} 个节点
-                  <span v-if="graphData?.edges">
-                    | {{ graphData.edges.length }} 个关系
+              <div class="title-left">
+                <h3 class="section-title">
+                  <el-icon><Search /></el-icon>
+                  查询结果
+                </h3>
+                <div class="results-stats">
+                  <span class="result-count">{{ results.length }}</span>
+                  <span class="result-text">条记录</span>
+                  <span v-if="graphData?.nodes" class="graph-stats">
+                    | {{ graphData.nodes.length }} 个节点
+                    <span v-if="graphData?.edges">
+                      | {{ graphData.edges.length }} 个关系
+                    </span>
                   </span>
+                </div>
+              </div>
+
+              <!-- 智能查询满意度评价 -->
+              <div v-if="queryMode === 'smart' && searched && !loading && !generatingQuery" class="satisfaction-rating">
+                <span class="rating-label">满意度评价：</span>
+                <el-button-group class="rating-buttons">
+                  <el-button
+                    :type="satisfactionRating === 'satisfied' ? 'success' : 'default'"
+                    size="small"
+                    @click="submitSatisfactionRating('satisfied')"
+                    :disabled="satisfactionRating !== null"
+                  >
+                    <el-icon><Select /></el-icon>
+                    满意
+                  </el-button>
+                  <el-button
+                    :type="satisfactionRating === 'unsatisfied' ? 'danger' : 'default'"
+                    size="small"
+                    @click="submitSatisfactionRating('unsatisfied')"
+                    :disabled="satisfactionRating !== null"
+                  >
+                    <el-icon><Close /></el-icon>
+                    不满意
+                  </el-button>
+                </el-button-group>
+                <span v-if="satisfactionRating" class="rating-feedback">
+                  感谢您的反馈！
                 </span>
               </div>
             </div>
@@ -413,6 +443,34 @@
               重新查询
             </el-button>
           </el-empty>
+
+          <!-- 智能查询满意度评价 - 空结果时 -->
+          <div v-if="queryMode === 'smart' && !generatingQuery" class="satisfaction-rating empty-satisfaction">
+            <span class="rating-label">满意度评价：</span>
+            <el-button-group class="rating-buttons">
+              <el-button
+                :type="satisfactionRating === 'satisfied' ? 'success' : 'default'"
+                size="small"
+                @click="submitSatisfactionRating('satisfied')"
+                :disabled="satisfactionRating !== null"
+              >
+                <el-icon><Select /></el-icon>
+                满意
+              </el-button>
+              <el-button
+                :type="satisfactionRating === 'unsatisfied' ? 'danger' : 'default'"
+                size="small"
+                @click="submitSatisfactionRating('unsatisfied')"
+                :disabled="satisfactionRating !== null"
+              >
+                <el-icon><Close /></el-icon>
+                不满意
+              </el-button>
+            </el-button-group>
+            <span v-if="satisfactionRating" class="rating-feedback">
+              感谢您的反馈！
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -423,13 +481,13 @@
 import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
+import {
   EditPen,
   VideoPlay,
-  RefreshRight, 
-  Collection, 
-  Download, 
-  InfoFilled, 
+  RefreshRight,
+  Collection,
+  Download,
+  InfoFilled,
   Close,
   HomeFilled,
   Share,
@@ -438,7 +496,8 @@ import {
   DocumentCopy,
   ArrowDown,
   MagicStick,
-  View
+  View,
+  Select
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -462,6 +521,7 @@ const queryMode = ref('cypher') // 查询模式: 'cypher' | 'smart'
 const smartQuery = ref('') // 智能查询输入
 const generatedCypher = ref('') // 生成的Cypher查询
 const generatingQuery = ref(false) // 生成查询中
+const satisfactionRating = ref(null) // 满意度评价: 'satisfied' | 'unsatisfied' | null
 
 // 权限和标签映射相关
 const availableLabels = ref([])
@@ -531,6 +591,7 @@ const clearResults = () => {
   graphData.value = null
   searched.value = false
   selectedNode.value = null
+  satisfactionRating.value = null // 重置满意度评价
   viewMode.value = 'graph'
   if (network.value) {
     network.value.destroy()
@@ -1647,6 +1708,8 @@ const executeSmartQuery = async () => {
     return
   }
 
+  // 重置满意度评价以便对新查询重新评价
+  satisfactionRating.value = null
   generatingQuery.value = true
 
   try {
@@ -1725,6 +1788,23 @@ const editGeneratedQuery = () => {
   ElMessage.success('已切换到Cypher查询模式，您可以编辑查询语句')
 }
 
+// 提交满意度评价
+const submitSatisfactionRating = (rating) => {
+  satisfactionRating.value = rating
+
+  const ratingText = rating === 'satisfied' ? '满意' : '不满意'
+  ElMessage.success(`感谢您的反馈！您对此次智能查询的评价是：${ratingText}`)
+
+  // 这里可以添加向后端发送评价数据的逻辑
+  console.log('智能查询满意度评价:', {
+    query: smartQuery.value,
+    generatedCypher: generatedCypher.value,
+    rating: rating,
+    timestamp: new Date().toISOString(),
+    resultCount: results.value.length
+  })
+}
+
 // 监听查询模式变化，清理相关状态
 watch(queryMode, (newMode) => {
   // 清空当前结果
@@ -1732,14 +1812,15 @@ watch(queryMode, (newMode) => {
   graphData.value = null
   searched.value = false
   selectedNode.value = null
-  
+  satisfactionRating.value = null // 重置满意度评价
+
   if (newMode === 'cypher') {
     smartQuery.value = ''
     generatedCypher.value = ''
   } else if (newMode === 'smart') {
     cypherQuery.value = ''
   }
-  
+
   // 清理网络图
   if (network.value) {
     network.value.destroy()
@@ -2091,6 +2172,14 @@ onMounted(() => {
 }
 
 .results-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 120px;
+  width: 100%;
+}
+
+.title-left {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -2554,22 +2643,102 @@ onMounted(() => {
   margin: 0 0 24px 0;
 }
 
+/* 满意度评价样式 */
+.satisfaction-rating {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(102, 126, 234, 0.05);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 8px;
+  width: 320px;
+  justify-content: flex-start;
+  flex-shrink: 0;
+}
+
+/* 空结果时的满意度评价样式 */
+.empty-satisfaction {
+  margin-top: 24px;
+  width: 100%;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.rating-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2c3e50;
+  white-space: nowrap;
+}
+
+.rating-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.rating-buttons .el-button {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rating-buttons .el-button:hover:not(.is-disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.rating-buttons .el-button.el-button--success {
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  border-color: #28a745;
+}
+
+.rating-buttons .el-button.el-button--danger {
+  background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);
+  border-color: #dc3545;
+}
+
+.rating-feedback {
+  font-size: 13px;
+  color: #667eea;
+  font-weight: 500;
+  margin-left: 8px;
+  opacity: 0.8;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
   .cypher-query-container {
     padding: 16px;
   }
-  
+
   .templates-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .results-header {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
-  
+
+  .results-title {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .title-left {
+    justify-content: center;
+  }
+
   .node-info-panel {
     width: 100%;
     position: relative;
@@ -2577,6 +2746,25 @@ onMounted(() => {
     border-top: 1px solid #e8ecf0;
     box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
   }
-  
+
+  .satisfaction-rating {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: 100%;
+    max-width: none;
+    justify-content: center;
+  }
+
+  .empty-satisfaction {
+    margin-top: 16px;
+    width: 100%;
+    max-width: none;
+  }
+
+  .rating-buttons {
+    justify-content: center;
+  }
+
 }
 </style>
