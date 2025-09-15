@@ -9,8 +9,8 @@
         <el-icon><HomeFilled /></el-icon>
         返回首页
       </el-button>
-      <el-button 
-        type="primary" 
+      <el-button
+        type="primary"
         class="action-btn"
         @click="clearResults"
         :disabled="loading"
@@ -29,7 +29,21 @@
               <el-icon><Collection /></el-icon>
               节点标签
             </h3>
-            <p class="section-subtitle">点击节点标签查看相关节点</p>
+            <p class="section-subtitle">选择查询模式并点击节点标签查看相关节点</p>
+          </div>
+
+          <!-- 查询模式选择 -->
+          <div class="query-mode-selector">
+            <el-radio-group v-model="queryMode" @change="onModeChange" class="mode-group">
+              <el-radio-button label="general">
+                <el-icon><Collection /></el-icon>
+                通用模式
+              </el-radio-button>
+              <el-radio-button label="new-standard">
+                <el-icon><Star /></el-icon>
+                新标准模式
+              </el-radio-button>
+            </el-radio-group>
           </div>
           
           <div class="labels-content">
@@ -396,12 +410,12 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
-  Search, 
-  RefreshRight, 
-  Collection, 
-  Download, 
-  InfoFilled, 
+import {
+  Search,
+  RefreshRight,
+  Collection,
+  Download,
+  InfoFilled,
   Close,
   HomeFilled,
   Plus,
@@ -410,7 +424,8 @@ import {
   Share,
   Setting,
   DataLine,
-  Loading
+  Loading,
+  Star
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -434,6 +449,12 @@ const network = ref(null)
 const showingRelationships = ref(false)
 const relationshipData = ref(null)
 const propertyPermissions = ref({})
+const queryMode = ref('general') // 查询模式：'general' 或 'new-standard'
+const labelsCache = ref({
+  data: null,
+  timestamp: null,
+  version: null
+}) // 标签缓存，包含数据、时间戳和版本信息
 
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
@@ -476,6 +497,25 @@ const goHome = () => {
   router.push('/dashboard')
 }
 
+// 模式切换处理
+const onModeChange = () => {
+  // 清空之前的结果和选择
+  clearResults()
+  selectedLabel.value = ''
+
+  // 如果缓存有效，直接过滤，否则重新加载
+  if (isCacheValid()) {
+    filterLabelsByMode()
+    const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
+    console.log('模式切换使用缓存数据')
+    ElMessage.success(`${modeText}模式加载了 ${availableLabels.value.length} 种节点标签`)
+  } else {
+    // 缓存无效时重新加载
+    console.log('缓存无效，重新加载数据')
+    loadAvailableLabels()
+  }
+}
+
 // 选择标签
 const selectLabel = (labelName) => {
   selectedLabel.value = labelName
@@ -494,6 +534,7 @@ const clearResults = () => {
     network.value = null
   }
 }
+
 
 const performSearch = async () => {
   if (!selectedLabel.value) {
@@ -1283,10 +1324,22 @@ const isUrl = (str) => {
 const loadAvailableLabels = async () => {
   loadingLabels.value = true
   try {
+    // 检查缓存是否有效
+    if (isCacheValid()) {
+      filterLabelsByMode()
+      const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
+      console.log('使用缓存数据，缓存时间:', new Date(labelsCache.value.timestamp).toLocaleTimeString())
+      ElMessage.success(`${modeText}模式加载了 ${availableLabels.value.length} 种节点标签 (缓存)`)
+      loadingLabels.value = false
+      return
+    }
+
+    let allLabels = []
+
     // 首先尝试使用新的标签映射API
     const mappingResponse = await apiService.getLabelMappings('node')
     const nodeMappings = mappingResponse.node_labels || []
-    
+
     if (nodeMappings.length > 0) {
       // 使用映射数据，但需要获取计数信息
       try {
@@ -1298,16 +1351,16 @@ const loadAvailableLabels = async () => {
             countMap[item.label] = item.count
           })
         }
-        
-        availableLabels.value = nodeMappings.map(mapping => ({
+
+        allLabels = nodeMappings.map(mapping => ({
           id: mapping.id,
           neo4j_name: mapping.neo4j_name,
           display_name: mapping.display_name,
           count: countMap[mapping.neo4j_name] || 0,
           description: mapping.description
         }))
-        
-        // 同时加载每个节点标签的属性权限
+
+        // 只为需要的标签加载属性权限（首次加载时才加载权限）
         for (const mapping of nodeMappings) {
           await loadPropertyPermissions(mapping.id)
         }
@@ -1322,8 +1375,8 @@ const loadAvailableLabels = async () => {
               countMap[item.label] = item.count
             })
           }
-          
-          availableLabels.value = nodeMappings.map(mapping => ({
+
+          allLabels = nodeMappings.map(mapping => ({
             id: mapping.id,
             neo4j_name: mapping.neo4j_name,
             display_name: mapping.display_name,
@@ -1332,7 +1385,7 @@ const loadAvailableLabels = async () => {
           }))
         } catch (fallbackError) {
           // 如果获取计数失败，使用映射数据但不显示计数
-          availableLabels.value = nodeMappings.map(mapping => ({
+          allLabels = nodeMappings.map(mapping => ({
             id: mapping.id,
             neo4j_name: mapping.neo4j_name,
             display_name: mapping.display_name,
@@ -1340,8 +1393,8 @@ const loadAvailableLabels = async () => {
             description: mapping.description
           }))
         }
-        
-        // 即使计数失败，也要加载属性权限
+
+        // 即使计数失败，也要加载属性权限（首次加载时才加载权限）
         for (const mapping of nodeMappings) {
           await loadPropertyPermissions(mapping.id)
         }
@@ -1351,7 +1404,7 @@ const loadAvailableLabels = async () => {
       try {
         const nodeTypesResponse = await apiService.getNodeTypes()
         if (nodeTypesResponse.node_types) {
-          availableLabels.value = nodeTypesResponse.node_types.map(item => ({
+          allLabels = nodeTypesResponse.node_types.map(item => ({
             neo4j_name: item.label,
             display_name: item.label,
             count: item.count,
@@ -1365,14 +1418,14 @@ const loadAvailableLabels = async () => {
         // 后备方案：使用原始API
         const response = await apiService.getAllLabels()
         if (response.labels_with_counts) {
-          availableLabels.value = response.labels_with_counts.map(item => ({
+          allLabels = response.labels_with_counts.map(item => ({
             neo4j_name: item.label,
             display_name: item.label,
             count: item.count,
             description: null
           }))
         } else {
-          availableLabels.value = (response.labels || []).map(label => ({
+          allLabels = (response.labels || []).map(label => ({
             neo4j_name: label,
             display_name: label,
             count: 0,
@@ -1381,14 +1434,59 @@ const loadAvailableLabels = async () => {
         }
       }
     }
-    
-    ElMessage.success(`加载了 ${availableLabels.value.length} 种节点标签`)
+
+    // 缓存全部标签数据，包含时间戳
+    labelsCache.value = {
+      data: allLabels,
+      timestamp: Date.now(),
+      version: allLabels.length // 使用标签数量作为简单的版本号
+    }
+
+    console.log('标签数据已缓存，标签数量:', allLabels.length, '缓存时间:', new Date().toLocaleTimeString())
+
+    // 根据当前模式过滤标签
+    filterLabelsByMode()
+
+    const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
+    ElMessage.success(`${modeText}模式加载了 ${availableLabels.value.length} 种节点标签`)
   } catch (error) {
     console.error('加载节点标签失败:', error)
     ElMessage.error('加载节点标签失败')
     availableLabels.value = []
   } finally {
     loadingLabels.value = false
+  }
+}
+
+// 检查缓存是否有效
+const isCacheValid = () => {
+  if (!labelsCache.value.data) return false
+
+  // 缓存过期时间：5分钟
+  const CACHE_EXPIRY = 5 * 60 * 1000
+  const now = Date.now()
+
+  if (labelsCache.value.timestamp && (now - labelsCache.value.timestamp) > CACHE_EXPIRY) {
+    console.log('缓存已过期，需要重新加载')
+    return false
+  }
+
+  return true
+}
+
+// 根据模式过滤标签
+const filterLabelsByMode = () => {
+  if (!labelsCache.value.data) return
+
+  if (queryMode.value === 'new-standard') {
+    // 新标准模式：只显示CharacterNewStandard、WordNewStandard、GrammarNewStandard
+    const newStandardLabels = ['CharacterNewStandard', 'WordNewStandard', 'GrammarNewStandard']
+    availableLabels.value = labelsCache.value.data.filter(label =>
+      newStandardLabels.includes(label.neo4j_name)
+    )
+  } else {
+    // 通用模式：显示所有标签
+    availableLabels.value = labelsCache.value.data
   }
 }
 
@@ -1611,6 +1709,40 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+/* 查询模式选择器 */
+.query-mode-selector {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.mode-group :deep(.el-radio-button) {
+  margin: 0;
+}
+
+.mode-group :deep(.el-radio-button__inner) {
+  height: 44px;
+  line-height: 44px;
+  padding: 0 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.mode-group :deep(.el-radio-button__inner:hover) {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.mode-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 /* 节点标签选择区域 */
