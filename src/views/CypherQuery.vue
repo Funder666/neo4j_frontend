@@ -215,9 +215,6 @@
                     不满意
                   </el-button>
                 </el-button-group>
-                <span v-if="satisfactionRating" class="rating-feedback">
-                  感谢您的反馈！
-                </span>
               </div>
             </div>
             <div class="results-actions">
@@ -501,6 +498,7 @@ import {
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
+import loggingService from '../services/logging'
 import AppLayout from '../components/AppLayout.vue'
 import { Network } from 'vis-network'
 
@@ -613,18 +611,30 @@ const executeQuery = async () => {
   loading.value = true
   searched.value = true
 
+  // 记录开始时间
+  const startTime = Date.now()
+
   try {
     const response = await apiService.runQuery(cypherQuery.value, {})
-    
+
     results.value = response.records || []
     graphData.value = response.graph_data || null
-    
-    
+
+    // 计算执行时间
+    const executionTime = Date.now() - startTime
+
+    // 记录成功的Cypher查询日志
+    loggingService.logCypherQuery(cypherQuery.value, {
+      success: true,
+      records: results.value,
+      graph_data: graphData.value
+    }, executionTime).catch(console.error)
+
     if (results.value.length === 0) {
       ElMessage.info('查询未返回结果')
     } else {
       ElMessage.success(`查询成功，返回 ${results.value.length} 条记录`)
-      
+
       // 默认显示图形视图
       viewMode.value = 'graph'
       nextTick(() => {
@@ -633,6 +643,16 @@ const executeQuery = async () => {
     }
   } catch (error) {
     console.error('Cypher查询失败:', error)
+
+    // 计算执行时间
+    const executionTime = Date.now() - startTime
+
+    // 记录失败的Cypher查询日志
+    loggingService.logCypherQuery(cypherQuery.value, {
+      success: false,
+      error: error
+    }, executionTime).catch(console.error)
+
     ElMessage.error('查询失败: ' + error.message)
   } finally {
     loading.value = false
@@ -1750,17 +1770,35 @@ const executeSmartQuery = async () => {
     loading.value = true
     searched.value = true
 
+    // 记录智能查询的开始时间
+    const queryStartTime = Date.now()
+
     try {
       const response = await apiService.runQuery(generatedCypher.value, {})
-      
+
       results.value = response.records || []
       graphData.value = response.graph_data || null
-      
+
+      // 计算查询执行时间
+      const queryExecutionTime = Date.now() - queryStartTime
+
+      // 记录成功的智能查询日志
+      loggingService.logSmartQuery(
+        smartQuery.value,
+        generatedCypher.value,
+        {
+          success: true,
+          records: results.value,
+          graph_data: graphData.value
+        },
+        queryExecutionTime
+      ).catch(console.error)
+
       if (results.value.length === 0) {
         ElMessage.info('智能查询未返回结果')
       } else {
         ElMessage.success(`智能查询成功，返回 ${results.value.length} 条记录`)
-        
+
         // 默认显示图形视图
         viewMode.value = 'graph'
         nextTick(() => {
@@ -1769,6 +1807,21 @@ const executeSmartQuery = async () => {
       }
     } catch (queryError) {
       console.error('执行生成的Cypher查询失败:', queryError)
+
+      // 计算查询执行时间
+      const queryExecutionTime = Date.now() - queryStartTime
+
+      // 记录失败的智能查询日志
+      loggingService.logSmartQuery(
+        smartQuery.value,
+        generatedCypher.value,
+        {
+          success: false,
+          error: queryError
+        },
+        queryExecutionTime
+      ).catch(console.error)
+
       ElMessage.error('执行查询失败: ' + queryError.message)
     } finally {
       loading.value = false
@@ -1795,7 +1848,21 @@ const submitSatisfactionRating = (rating) => {
   const ratingText = rating === 'satisfied' ? '满意' : '不满意'
   ElMessage.success(`感谢您的反馈！您对此次智能查询的评价是：${ratingText}`)
 
-  // 这里可以添加向后端发送评价数据的逻辑
+  // 记录包含满意度评价的完整智能查询日志
+  if (smartQuery.value && generatedCypher.value) {
+    loggingService.logSmartQuery(
+      smartQuery.value,
+      generatedCypher.value,
+      {
+        success: true,
+        records: results.value,
+        graph_data: graphData.value
+      },
+      0, // 执行时间设为0，因为这是评价记录，不是实际查询执行
+      rating // 传入满意度评价
+    ).catch(console.error)
+  }
+
   console.log('智能查询满意度评价:', {
     query: smartQuery.value,
     generatedCypher: generatedCypher.value,

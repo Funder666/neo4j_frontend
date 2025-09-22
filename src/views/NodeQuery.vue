@@ -429,6 +429,7 @@ import {
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
+import loggingService from '../services/logging'
 import AppLayout from '../components/AppLayout.vue'
 import { Network } from 'vis-network'
 
@@ -545,6 +546,17 @@ const performSearch = async () => {
   loading.value = true
   searched.value = true
 
+  // 记录开始时间用于计算执行时间
+  const startTime = Date.now()
+
+  // 准备查询数据用于日志记录
+  const queryData = {
+    label: selectedLabel.value,
+    searchQuery: searchQuery.value.trim(),
+    limit: limit.value,
+    mode: queryMode.value
+  }
+
   try {
     let response
     // 如果有搜索关键词，使用搜索API，否则使用获取节点API
@@ -558,13 +570,22 @@ const performSearch = async () => {
       // 没有搜索关键词时，获取指定标签的前50个节点
       response = await apiService.getNodes(limit.value, selectedLabel.value)
     }
-    
+
     results.value = response.nodes || []
-    
+
+    // 计算执行时间
+    const executionTime = Date.now() - startTime
+
+    // 记录成功的查询日志
+    loggingService.logNodeQuery(queryData, {
+      success: true,
+      data: results.value
+    }, executionTime).catch(console.error)
+
     if (results.value.length === 0) {
       ElMessage.info('未找到匹配的节点')
     } else {
-      const message = searchQuery.value.trim() 
+      const message = searchQuery.value.trim()
         ? `找到 ${results.value.length} 个匹配节点`
         : `加载了 ${results.value.length} 个节点`
       ElMessage.success(message)
@@ -575,6 +596,16 @@ const performSearch = async () => {
     }
   } catch (error) {
     console.error('搜索失败:', error)
+
+    // 计算执行时间
+    const executionTime = Date.now() - startTime
+
+    // 记录失败的查询日志
+    loggingService.logNodeQuery(queryData, {
+      success: false,
+      error: error
+    }, executionTime).catch(console.error)
+
     ElMessage.error('搜索失败: ' + error.message)
   } finally {
     loading.value = false

@@ -757,6 +757,7 @@ import {
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
+import loggingService from '../services/logging'
 
 // 调试：检查API服务方法
 console.log('RelationshipQuery - API服务加载完成')
@@ -1029,7 +1030,20 @@ const queryRelationship = async () => {
     })
     
     executionTime.value = Date.now() - startTime
-    
+
+    // 记录成功的查询日志
+    const queryData = {
+      relationshipType: selectedRelType.value,
+      startNodeFilter: startNodeFilter.value,
+      endNodeFilter: endNodeFilter.value,
+      limit: nodeLimit.value
+    }
+
+    loggingService.logRelationshipQuery(queryData, {
+      success: true,
+      data: queryResults.value
+    }, executionTime.value).catch(console.error)
+
     if (queryResults.value.length === 0) {
       ElMessage.info('查询执行成功，但未返回结果')
     } else {
@@ -1042,6 +1056,21 @@ const queryRelationship = async () => {
     }
   } catch (error) {
     console.error('查询执行失败:', error)
+
+    // 记录失败的查询日志
+    const queryData = {
+      relationshipType: selectedRelType.value,
+      startNodeFilter: startNodeFilter.value,
+      endNodeFilter: endNodeFilter.value,
+      limit: nodeLimit.value
+    }
+
+    const currentExecutionTime = Date.now() - startTime
+    loggingService.logRelationshipQuery(queryData, {
+      success: false,
+      error: error
+    }, currentExecutionTime).catch(console.error)
+
     ElMessage.error(`查询执行失败: ${error.message}`)
     queryResults.value = []
   } finally {
