@@ -29,11 +29,11 @@
               <el-icon><Collection /></el-icon>
               节点标签
             </h3>
-            <p class="section-subtitle">选择查询模式并点击节点标签查看相关节点</p>
+            <p class="section-subtitle">{{ isGuest ? '新标准等级下的相关节点' : '选择查询模式并点击节点标签查看相关节点' }}</p>
           </div>
 
-          <!-- 查询模式选择 -->
-          <div class="query-mode-selector">
+          <!-- 查询模式选择 - guest用户不显示 -->
+          <div v-if="!isGuest" class="query-mode-selector">
             <el-radio-group v-model="queryMode" @change="onModeChange" class="mode-group">
               <el-radio-button label="general">
                 <el-icon><Collection /></el-icon>
@@ -460,6 +460,7 @@ const labelsCache = ref({
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
+const isGuest = computed(() => currentUser.value?.username === 'guest')
 
 // 计算选中标签的显示名称
 const selectedLabelDisplayName = computed(() => {
@@ -1510,8 +1511,19 @@ const filterLabelsByMode = () => {
   if (!labelsCache.value.data) return
 
   if (queryMode.value === 'new-standard') {
-    // 新标准模式：只显示CharacterNewStandard、WordNewStandard、GrammarNewStandard
-    const newStandardLabels = ['CharacterNewStandard', 'WordNewStandard', 'GrammarNewStandard']
+    // 新标准模式：显示新标准相关节点
+    const newStandardLabels = [
+      'CharacterNewStandard',
+      'WordNewStandard',
+      'GrammarNewStandard',
+      'Pinyin',  // 拼音
+      'Radical', // 部首
+      'CulturalOutlineStage', // 文化大纲阶段
+      'PrimaryCulturalCategory', // 一级文化项目类别
+      'SecondaryCulturalCategory', // 二级文化项目类别
+      'InternationalLevel', // 新标准等级
+      'ErrorType' // 偏误类型
+    ]
     availableLabels.value = labelsCache.value.data.filter(label =>
       newStandardLabels.includes(label.neo4j_name)
     )
@@ -1728,6 +1740,10 @@ const getLegendLineStyle = (relationshipType) => {
 }
 
 onMounted(() => {
+  // 如果是guest用户，强制使用新标准模式
+  if (isGuest.value) {
+    queryMode.value = 'new-standard'
+  }
   loadAvailableLabels()
 })
 </script>
