@@ -1516,6 +1516,8 @@ const filterLabelsByMode = () => {
       'CharacterNewStandard',
       'WordNewStandard',
       'GrammarNewStandard',
+      'CulturalNewStandard', // 文化新标准
+      'QuestionNewStandard', // 题目新标准
       'Pinyin',  // 拼音
       'Radical', // 部首
       'CulturalOutlineStage', // 文化大纲阶段
