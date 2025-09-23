@@ -195,19 +195,29 @@
             <div class="legend-header">
               <h4 class="legend-title">
                 <el-icon><InfoFilled /></el-icon>
-                关系类型图例
+                关系类型筛选
               </h4>
             </div>
             <div class="legend-content">
-              <div 
+              <div
                 v-for="(relationshipType, index) in getUniqueRelationshipTypes()"
                 :key="relationshipType"
                 class="legend-item"
               >
                 <div class="legend-line" :style="getLegendLineStyle(relationshipType)"></div>
-                <span class="legend-label" :style="{ color: getRelationshipColor(relationshipType) }">
+                <span
+                  class="legend-label"
+                  :style="{ color: getRelationshipColor(relationshipType) }"
+                  @click="toggleRelationshipType(relationshipType)"
+                >
                   {{ getRelationshipDisplayName(relationshipType) }}
                 </span>
+                <el-checkbox
+                  :model-value="selectedRelationshipTypes.has(relationshipType)"
+                  @change="(checked) => handleCheckboxChange(relationshipType, checked)"
+                  @click.stop
+                  class="legend-checkbox"
+                />
               </div>
             </div>
           </div>
@@ -449,6 +459,7 @@ const networkContainer = ref(null)
 const network = ref(null)
 const showingRelationships = ref(false)
 const relationshipData = ref(null)
+const selectedRelationshipTypes = ref(new Set()) // 选中的关系类型
 const propertyPermissions = ref({})
 const queryMode = ref('general') // 查询模式：'general' 或 'new-standard'
 const labelsCache = ref({
@@ -531,6 +542,7 @@ const clearResults = () => {
   selectedNode.value = null
   showingRelationships.value = false
   relationshipData.value = null
+  selectedRelationshipTypes.value.clear() // 清空关系类型选择
   if (network.value) {
     network.value.destroy()
     network.value = null
@@ -993,12 +1005,12 @@ const saveNode = async () => {
 const showNodeRelationships = async (node) => {
   try {
     loading.value = true
-    
+
     // 获取节点的所有关系
     const response = await apiService.getNodeRelationships(node.id)
-    
+
     console.log('API response for node relationships:', response)
-    
+
     // 检查不同可能的数据结构
     let relationships = null
     if (response.relationships) {
@@ -1008,23 +1020,27 @@ const showNodeRelationships = async (node) => {
     } else if (Array.isArray(response)) {
       relationships = response
     }
-    
+
     if (!relationships || relationships.length === 0) {
       ElMessage.info('该节点没有关联的关系')
       return
     }
-    
+
     console.log('Processed relationships:', relationships)
-    
+
     // 设置关系数据并切换显示模式
     relationshipData.value = { relationships }
     showingRelationships.value = true
-    
+
+    // 初始化选中所有关系类型
+    const allTypes = getUniqueRelationshipTypes()
+    selectedRelationshipTypes.value = new Set(allTypes)
+
     // 创建关系图
     setTimeout(() => {
       createRelationshipNetwork(node, relationships)
     }, 100)
-    
+
     ElMessage.success(`找到 ${relationships.length} 个关系`)
   } catch (error) {
     console.error('获取节点关系失败:', error)
@@ -1307,6 +1323,13 @@ const createRelationshipNetwork = (centerNode, relationships) => {
 
   network.value = new Network(networkContainer.value, data, options)
 
+  // 创建网络后立即应用筛选（只有在所有关系类型都被选中的情况下才更新）
+  if (selectedRelationshipTypes.value.size < getUniqueRelationshipTypes().length) {
+    setTimeout(() => {
+      updateRelationshipNetwork()
+    }, 100)
+  }
+
   // 监听节点选择事件
   network.value.on('selectNode', (params) => {
     if (params.nodes.length > 0) {
@@ -1329,7 +1352,8 @@ const backToSearchResults = () => {
   showingRelationships.value = false
   relationshipData.value = null
   selectedNode.value = null
-  
+  selectedRelationshipTypes.value.clear() // 清空关系类型选择
+
   // 重新创建原始搜索结果的网络图
   setTimeout(() => {
     createNetwork()
@@ -1516,22 +1540,33 @@ const filterLabelsByMode = () => {
       'CharacterNewStandard',
       'WordNewStandard',
       'GrammarNewStandard',
-      'CulturalNewStandard', // 文化新标准
+      // 'CulturalNewStandard', // 文化新标准
       'QuestionNewStandard', // 题目新标准
       'Pinyin',  // 拼音
       'Radical', // 部首
-      'CulturalOutlineStage', // 文化大纲阶段
-      'PrimaryCulturalCategory', // 一级文化项目类别
-      'SecondaryCulturalCategory', // 二级文化项目类别
+      'Idiom', // 成语
+      'Cultural', //文化
+      'CulturalStage', // 文化大纲阶段
+      'CulturalLevel1', // 一级文化项目类别
+      'CulturalLevel2', // 二级文化项目类别
       'InternationalLevel', // 新标准等级
-      'ErrorType' // 偏误类型
+      'Error' // 偏误类型
     ]
     availableLabels.value = labelsCache.value.data.filter(label =>
       newStandardLabels.includes(label.neo4j_name)
     )
   } else {
-    // 通用模式：显示所有标签
-    availableLabels.value = labelsCache.value.data
+    // 通用模式：显示所有标签，但排除NewStandard节点
+    const excludeLabels = [
+      'CharacterNewStandard',
+      'WordNewStandard',
+      'GrammarNewStandard',
+      // 'CulturalNewStandard',
+      'QuestionNewStandard'
+    ]
+    availableLabels.value = labelsCache.value.data.filter(label =>
+      !excludeLabels.includes(label.neo4j_name)
+    )
   }
 }
 
@@ -1724,7 +1759,7 @@ const getRelationshipDisplayName = (relationshipType) => {
 const getLegendLineStyle = (relationshipType) => {
   const color = getRelationshipColor(relationshipType)
   const lineStyle = getRelationshipLineStyle(relationshipType)
-  
+
   let borderStyle = 'solid'
   if (lineStyle.dashes) {
     if (lineStyle.dashes.length === 2) {
@@ -1733,12 +1768,169 @@ const getLegendLineStyle = (relationshipType) => {
       borderStyle = 'dotted'
     }
   }
-  
+
   return {
     backgroundColor: color,
     borderTop: `${lineStyle.width}px ${borderStyle} ${color}`,
     height: `${Math.max(2, lineStyle.width)}px`
   }
+}
+
+// 关系类型筛选相关方法
+// 处理复选框状态变化
+const handleCheckboxChange = (relationshipType, checked) => {
+  console.log(`Checkbox change: ${relationshipType} = ${checked}`)
+  if (checked) {
+    selectedRelationshipTypes.value.add(relationshipType)
+  } else {
+    selectedRelationshipTypes.value.delete(relationshipType)
+  }
+  updateRelationshipNetwork()
+}
+
+// 切换单个关系类型的选中状态（点击标签时触发）
+const toggleRelationshipType = (relationshipType) => {
+  const currentlySelected = selectedRelationshipTypes.value.has(relationshipType)
+  if (currentlySelected) {
+    selectedRelationshipTypes.value.delete(relationshipType)
+  } else {
+    selectedRelationshipTypes.value.add(relationshipType)
+  }
+  console.log(`Toggle: ${relationshipType}, now selected: ${!currentlySelected}`)
+  updateRelationshipNetwork()
+}
+
+
+// 更新关系网络图（仅更新边，不重新创建整个网络）
+const updateRelationshipNetwork = () => {
+  if (!network.value || !relationshipData.value || !showingRelationships.value) {
+    console.log('Cannot update network: missing dependencies')
+    return
+  }
+
+  try {
+    // 重新过滤边
+    const filteredEdges = filterEdgesBySelectedTypes()
+
+    console.log('Updating network with filtered edges:', filteredEdges.length, 'out of', relationshipData.value.relationships.length)
+    console.log('Selected relationship types:', Array.from(selectedRelationshipTypes.value))
+
+    // 只更新边数据，保持节点不变
+    const edgeDataSet = network.value.body.data.edges
+    const nodeDataSet = network.value.body.data.nodes
+
+    // 清空并重新添加边
+    edgeDataSet.clear()
+    if (filteredEdges.length > 0) {
+      edgeDataSet.add(filteredEdges)
+    }
+
+    // 如果没有选中任何关系类型，显示提示
+    if (selectedRelationshipTypes.value.size === 0) {
+      console.log('No relationship types selected - showing nodes only')
+    }
+  } catch (error) {
+    console.error('Error updating relationship network:', error)
+    // 如果更新失败，重新创建整个网络
+    if (relationshipData.value && relationshipData.value.relationships && selectedNode.value) {
+      console.log('Recreating entire network due to update error')
+      createRelationshipNetwork(selectedNode.value, relationshipData.value.relationships)
+    }
+  }
+}
+
+// 根据选中的关系类型过滤边
+const filterEdgesBySelectedTypes = () => {
+  if (!relationshipData.value || !relationshipData.value.relationships) {
+    console.log('No relationship data available')
+    return []
+  }
+
+  console.log('Filtering edges, selected types:', Array.from(selectedRelationshipTypes.value))
+
+  const edges = []
+  relationshipData.value.relationships.forEach((record, index) => {
+    let startNode, relationship, endNode
+
+    // 解析不同的数据结构
+    if (record.n && record.r && record.m) {
+      startNode = record.n
+      relationship = record.r
+      endNode = record.m
+    } else if (record.start_node && record.relationship && record.end_node) {
+      startNode = record.start_node
+      relationship = record.relationship
+      endNode = record.end_node
+    } else if (record.type && (record.start_node_id || record.end_node_id)) {
+      relationship = record
+      if (record.start_node) startNode = record.start_node
+      if (record.end_node) endNode = record.end_node
+      if (!startNode || !endNode) {
+        console.log('Missing node data for relationship:', record)
+        return
+      }
+    } else {
+      console.log('Unsupported relationship format:', record)
+      return
+    }
+
+    // 检查关系类型是否被选中
+    if (relationship && startNode && endNode) {
+      const relationshipType = relationship.type
+      const isSelected = selectedRelationshipTypes.value.has(relationshipType)
+
+      console.log(`Relationship ${relationshipType}: selected=${isSelected}`)
+
+      if (isSelected) {
+        const edgeColor = getRelationshipColor(relationshipType)
+        const highlightColor = getRelationshipHighlightColor(relationshipType)
+        const lineStyle = getRelationshipLineStyle(relationshipType)
+        const arrowStyle = getRelationshipArrowStyle(relationshipType)
+
+        edges.push({
+          id: relationship.id || `edge_${index}`,
+          from: startNode.id,
+          to: endNode.id,
+          label: relationshipType,
+          title: `关系类型: ${relationshipType}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
+          color: {
+            color: edgeColor,
+            highlight: highlightColor,
+            opacity: 0.8
+          },
+          font: {
+            color: edgeColor,
+            size: 12,
+            bold: true,
+            strokeWidth: 3,
+            strokeColor: '#ffffff',
+            background: 'rgba(255, 255, 255, 0.8)',
+            borderWidth: 1,
+            borderColor: edgeColor
+          },
+          arrows: {
+            to: {
+              enabled: true,
+              scaleFactor: arrowStyle.scaleFactor,
+              type: arrowStyle.type
+            }
+          },
+          arrowStrikethrough: false,
+          smooth: {
+            enabled: true,
+            type: 'dynamic',
+            roundness: 0.3
+          },
+          width: lineStyle.width,
+          dashes: lineStyle.dashes,
+          data: relationship
+        })
+      }
+    }
+  })
+
+  console.log(`Filtered ${edges.length} edges out of ${relationshipData.value.relationships.length} relationships`)
+  return edges
 }
 
 onMounted(() => {
@@ -2144,8 +2336,59 @@ onMounted(() => {
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 0;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.legend-item:hover {
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.legend-label {
+  flex: 1;
+  cursor: pointer;
+  user-select: none;
+}
+
+.legend-label:hover {
+  opacity: 0.8;
+}
+
+.legend-checkbox {
+  margin: 0;
+  cursor: pointer;
+}
+
+.legend-checkbox :deep(.el-checkbox) {
+  height: auto;
+  line-height: normal;
+}
+
+.legend-checkbox :deep(.el-checkbox__input) {
+  margin: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.legend-checkbox :deep(.el-checkbox__inner) {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.legend-checkbox :deep(.el-checkbox__inner::after) {
+  width: 5px;
+  height: 8px;
+  left: 5px;
+  top: 1px;
+}
+
+.legend-checkbox :deep(.el-checkbox__original) {
+  margin: 0;
+  outline: none;
 }
 
 .legend-line {

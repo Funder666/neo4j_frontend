@@ -128,6 +128,14 @@ class ApiService {
     })
   }
 
+  async updateRelationship(relationshipId, properties = {}) {
+    return this.put(`/relationships/${relationshipId}`, { properties })
+  }
+
+  async deleteRelationship(relationshipId) {
+    return this.delete(`/relationships/${relationshipId}`)
+  }
+
   async getNodeRelationships(nodeId) {
     return this.get(`/nodes/${nodeId}/relationships`)
   }
