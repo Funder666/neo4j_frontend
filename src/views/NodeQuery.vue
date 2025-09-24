@@ -41,7 +41,7 @@
               </el-radio-button>
               <el-radio-button label="new-standard">
                 <el-icon><Star /></el-icon>
-                新标准模式
+                国际中文教育标准模式
               </el-radio-button>
             </el-radio-group>
           </div>
