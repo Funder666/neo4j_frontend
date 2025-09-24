@@ -460,6 +460,9 @@ const network = ref(null)
 const showingRelationships = ref(false)
 const relationshipData = ref(null)
 const selectedRelationshipTypes = ref(new Set()) // 选中的关系类型
+const relationshipTypeMappings = ref([]) // 关系类型映射
+const allOriginalNodes = ref(new Map()) // 保存所有原始节点数据
+const allOriginalEdges = ref([]) // 保存所有原始边数据
 const propertyPermissions = ref({})
 const queryMode = ref('general') // 查询模式：'general' 或 'new-standard'
 const labelsCache = ref({
@@ -543,6 +546,8 @@ const clearResults = () => {
   showingRelationships.value = false
   relationshipData.value = null
   selectedRelationshipTypes.value.clear() // 清空关系类型选择
+  allOriginalNodes.value.clear() // 清空原始节点数据
+  allOriginalEdges.value = [] // 清空原始边数据
   if (network.value) {
     network.value.destroy()
     network.value = null
@@ -733,11 +738,49 @@ const createNetwork = () => {
 
 const getNodeColor = (label) => {
   const colors = {
-    'Character': '#FF6B6B',
-    'Word': '#4ECDC4', 
-    'Sentence': '#45B7D1',
-    'ExternalLink': '#96CEB4',
-    'default': '#667eea'
+    // 原始节点类型
+    'Character': '#FF6B6B',              // 红色 - 汉字
+    'Word': '#4ECDC4',                   // 青蓝色 - 词语
+    'Sentence': '#45B7D1',               // 蓝色 - 句子
+    'ExternalLink': '#96CEB4',           // 绿色 - 外部链接
+
+    // 新标准节点类型
+    'CharacterNewStandard': '#E74C3C',   // 深红色 - 新标准汉字
+    'WordNewStandard': '#3498DB',        // 深蓝色 - 新标准词语
+    'GrammarNewStandard': '#9B59B6',     // 紫色 - 新标准语法
+    'CulturalNewStandard': '#F39C12',    // 橙色 - 新标准文化
+    'QuestionNewStandard': '#E67E22',    // 橙红色 - 新标准题目
+
+    // 等级和组织节点
+    'InternationalLevel': '#2ECC71',     // 绿色 - 国际等级
+    'Level': '#27AE60',                  // 深绿色 - 等级
+    'Grade': '#16A085',                  // 青绿色 - 年级
+
+    // 语言组件节点
+    'Pinyin': '#FF9800',                 // 橙色 - 拼音
+    'Radical': '#795548',                // 棕色 - 部首
+    'Stroke': '#607D8B',                 // 蓝灰色 - 笔划
+    'Phonetic': '#FF5722',               // 深橙色 - 语音
+
+    // 文化节点
+    'CulturalOutlineStage': '#8E44AD',   // 紫色 - 文化大纲阶段
+    'PrimaryCulturalCategory': '#9B59B6', // 紫红色 - 一级文化类别
+    'SecondaryCulturalCategory': '#A569BD', // 浅紫色 - 二级文化类别
+
+    // 错误类型
+    'ErrorType': '#E74C3C',              // 红色 - 错误类型
+
+    // 其他类型
+    'Grammar': '#17A2B8',                // 青色 - 语法
+    'Vocabulary': '#20C997',             // 青绿色 - 词汇
+    'Text': '#6C757D',                   // 灰色 - 文本
+    'Concept': '#FD7E14',                // 橙色 - 概念
+    'Topic': '#DC3545',                  // 红色 - 主题
+    'Category': '#28A745',               // 绿色 - 类别
+    'Tag': '#6F42C1',                    // 紫色 - 标签
+    'Resource': '#17A2B8',               // 青色 - 资源
+
+    'default': '#667EEA'                 // 深蓝紫色 - 默认
   }
   return colors[label] || colors.default
 }
@@ -770,8 +813,24 @@ const getRelationshipColor = (relationshipType) => {
     'RELATED_TO': '#FFC107',              // 黄色 - 相关关系
     'DERIVES_FROM': '#E83E8C',            // 粉色 - 派生关系
     'LEADS_TO': '#FD7E14',                // 橙色 - 导致关系
-    
-    'default': '#6C757D'            // 灰色 - 默认
+
+    // 常见的新关系类型
+    'CILIN': '#8E44AD',                   // 紫色 - 同义词林
+    'CULTURAL_CORRELATION': '#E67E22',    // 橙红色 - 文化关联
+    'FROM_LEVEL': '#3498DB',              // 蓝色 - 来自等级
+    'HAS_CHARACTER': '#E74C3C',           // 红色 - 包含汉字
+    'HAS_COMPONENT': '#9B59B6',           // 紫红色 - 包含组件
+    'IS_COMPONENT_OF': '#8E44AD',         // 深紫色 - 是组件
+    'BELONGS_TO': '#2ECC71',              // 绿色 - 属于
+    'HAS_ERROR_TYPE': '#E74C3C',          // 红色 - 具有错误类型
+    'IN_CATEGORY': '#F39C12',             // 橙色 - 在类别中
+    'HAS_STAGE': '#16A085',               // 青绿色 - 具有阶段
+    'STRUCTURAL_RELATION': '#607D8B',     // 蓝灰色 - 结构关系
+    'SEMANTIC_RELATION': '#FF5722',       // 深橙色 - 语义关系
+    'PHONETIC_RELATION': '#FF9800',       // 橙色 - 语音关系
+    'GRAMMATICAL_RELATION': '#4CAF50',    // 绿色 - 语法关系
+
+    'default': '#95A5A6'            // 浅灰色 - 默认（比原来更明亮）
   }
   return colors[relationshipType] || colors.default
 }
@@ -1001,10 +1060,29 @@ const saveNode = async () => {
   }
 }
 
+// 加载关系类型映射
+const loadRelationshipTypeMappings = async () => {
+  if (relationshipTypeMappings.value.length > 0) {
+    return // 已加载过
+  }
+
+  try {
+    const mappingResponse = await apiService.getLabelMappings('relationship')
+    relationshipTypeMappings.value = mappingResponse.relationship_labels || []
+    console.log('Loaded relationship type mappings:', relationshipTypeMappings.value.length)
+  } catch (error) {
+    console.error('加载关系类型映射失败:', error)
+    relationshipTypeMappings.value = []
+  }
+}
+
 // 查看节点关系
 const showNodeRelationships = async (node) => {
   try {
     loading.value = true
+
+    // 先加载关系类型映射
+    await loadRelationshipTypeMappings()
 
     // 获取节点的所有关系
     const response = await apiService.getNodeRelationships(node.id)
@@ -1212,7 +1290,7 @@ const createRelationshipNetwork = (centerNode, relationships) => {
         id: relationship.id || `edge_${index}`,
         from: startNode.id,
         to: endNode.id,
-        label: relationship.type,
+        label: getRelationshipDisplayName(relationship.type),
         title: `关系类型: ${relationship.type}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
         color: {
           color: edgeColor,
@@ -1248,6 +1326,10 @@ const createRelationshipNetwork = (centerNode, relationships) => {
       })
     }
   })
+
+  // 保存原始数据供筛选使用
+  allOriginalNodes.value = nodes
+  allOriginalEdges.value = edges
 
   const data = {
     nodes: Array.from(nodes.values()),
@@ -1353,6 +1435,8 @@ const backToSearchResults = () => {
   relationshipData.value = null
   selectedNode.value = null
   selectedRelationshipTypes.value.clear() // 清空关系类型选择
+  allOriginalNodes.value.clear() // 清空原始节点数据
+  allOriginalEdges.value = [] // 清空原始边数据
 
   // 重新创建原始搜索结果的网络图
   setTimeout(() => {
@@ -1728,31 +1812,10 @@ const getUniqueRelationshipTypes = () => {
 }
 
 // 获取关系类型的显示名称
+// 使用后端映射获取关系类型的显示名称
 const getRelationshipDisplayName = (relationshipType) => {
-  const displayNames = {
-    // 原有的关系类型
-    'HAS_PINYIN': '拼音关系',
-    'HAS_RADICAL': '部首关系',
-    'SYNONYM': '近义词',
-    'ANTONYM': '反义词',
-    'DEPENDS_ON': '学习依赖',
-    'CONTAINS': '包含关系',
-    'RELATES_TO': '相关关系',
-    
-    // 实际数据库中的关系类型
-    'NEAR_SYNONYMOUS_WITH': '近义词',
-    'ANTITHESIS_WITH': '反义词',
-    'COMPOSITION_COMPONENT': '组成部分',
-    'HYPERNYM_OF': '上位词',
-    'HYPONYM_OF': '下位词', 
-    'MERONYM_OF': '部分关系',
-    'HOLONYM_OF': '整体关系',
-    'SIMILAR_TO': '相似关系',
-    'RELATED_TO': '相关关系',
-    'DERIVES_FROM': '派生关系',
-    'LEADS_TO': '导致关系'
-  }
-  return displayNames[relationshipType] || relationshipType
+  const mapping = relationshipTypeMappings.value.find(m => m.neo4j_name === relationshipType)
+  return mapping ? (mapping.display_name || relationshipType) : relationshipType
 }
 
 // 获取图例线条样式
@@ -1808,26 +1871,67 @@ const updateRelationshipNetwork = () => {
     return
   }
 
+  if (!allOriginalNodes.value || allOriginalNodes.value.size === 0) {
+    console.log('No original node data available')
+    return
+  }
+
   try {
     // 重新过滤边
     const filteredEdges = filterEdgesBySelectedTypes()
 
-    console.log('Updating network with filtered edges:', filteredEdges.length, 'out of', relationshipData.value.relationships.length)
+    console.log('Updating network with filtered edges:', filteredEdges.length, 'out of', allOriginalEdges.value.length)
     console.log('Selected relationship types:', Array.from(selectedRelationshipTypes.value))
 
-    // 只更新边数据，保持节点不变
+    // 获取数据集
     const edgeDataSet = network.value.body.data.edges
     const nodeDataSet = network.value.body.data.nodes
 
-    // 清空并重新添加边
+    // 获取参与筛选关系的节点ID
+    const participatingNodeIds = new Set()
+
+    // 始终包含中心节点
+    if (selectedNode.value) {
+      participatingNodeIds.add(selectedNode.value.id)
+    }
+
+    // 从筛选后的边中提取节点ID
+    filteredEdges.forEach(edge => {
+      participatingNodeIds.add(edge.from)
+      participatingNodeIds.add(edge.to)
+    })
+
+    // 从原始节点数据中过滤出参与关系的节点
+    const filteredNodes = []
+    participatingNodeIds.forEach(nodeId => {
+      const originalNode = allOriginalNodes.value.get(nodeId)
+      if (originalNode) {
+        filteredNodes.push(originalNode)
+      }
+    })
+
+    // 更新边
     edgeDataSet.clear()
     if (filteredEdges.length > 0) {
       edgeDataSet.add(filteredEdges)
     }
 
-    // 如果没有选中任何关系类型，显示提示
+    // 更新节点
+    nodeDataSet.clear()
+    if (filteredNodes.length > 0) {
+      nodeDataSet.add(filteredNodes)
+    }
+
+    console.log(`Filtered to ${filteredNodes.length} nodes out of ${allOriginalNodes.value.size} total nodes`)
+
+    // 如果没有选中任何关系类型，只显示中心节点
     if (selectedRelationshipTypes.value.size === 0) {
-      console.log('No relationship types selected - showing nodes only')
+      console.log('No relationship types selected - showing center node only')
+      const centerNode = allOriginalNodes.value.get(selectedNode.value?.id)
+      if (centerNode) {
+        nodeDataSet.clear()
+        nodeDataSet.add([centerNode])
+      }
     }
   } catch (error) {
     console.error('Error updating relationship network:', error)
@@ -1891,7 +1995,7 @@ const filterEdgesBySelectedTypes = () => {
           id: relationship.id || `edge_${index}`,
           from: startNode.id,
           to: endNode.id,
-          label: relationshipType,
+          label: getRelationshipDisplayName(relationshipType),
           title: `关系类型: ${relationshipType}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
           color: {
             color: edgeColor,
