@@ -84,15 +84,17 @@ class ApiService {
   }
 
   // 节点相关API
-  async getNodes(limit = 50, label = null, skip = 0) {
+  async getNodes(limit = 50, label = null, skip = 0, mode = null) {
     const params = { limit, skip }
     if (label) params.label = label
+    if (mode) params.mode = mode
     return this.get('/nodes', params)
   }
 
-  async searchNodes(text, label = null, limit = 50) {
+  async searchNodes(text, label = null, limit = 50, mode = null) {
     const data = { text, limit }
     if (label) data.label = label
+    if (mode) data.mode = mode
     return this.post('/nodes/search', data)
   }
 
@@ -154,8 +156,9 @@ class ApiService {
     return this.get('/relationship-types')
   }
 
-  async getNodeTypes() {
-    return this.get('/node-types')
+  async getNodeTypes(mode = null) {
+    const params = mode ? { mode } : {}
+    return this.get('/node-types', params)
   }
 
   // 自定义查询API
