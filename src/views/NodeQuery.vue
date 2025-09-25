@@ -519,17 +519,12 @@ const onModeChange = () => {
   clearResults()
   selectedLabel.value = ''
 
-  // 如果缓存有效，直接过滤，否则重新加载
-  if (isCacheValid()) {
-    filterLabelsByMode()
-    const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
-    console.log('模式切换使用缓存数据')
-    ElMessage.success(`${modeText}模式加载了 ${availableLabels.value.length} 种节点标签`)
-  } else {
-    // 缓存无效时重新加载
-    console.log('缓存无效，重新加载数据')
-    loadAvailableLabels()
-  }
+  // 模式切换时总是重新加载数据，因为不同模式下的数量统计不同
+  console.log('模式切换，强制重新加载数据以获取正确的数量统计')
+  // 清除缓存，强制重新加载
+  labelsCache.value.data = null
+  labelsCache.value.timestamp = 0
+  loadAvailableLabels()
 }
 
 // 选择标签
@@ -582,11 +577,12 @@ const performSearch = async () => {
       response = await apiService.searchNodes(
         searchQuery.value.trim(),
         selectedLabel.value,
-        limit.value
+        limit.value,
+        queryMode.value
       )
     } else {
       // 没有搜索关键词时，获取指定标签的前50个节点
-      response = await apiService.getNodes(limit.value, selectedLabel.value)
+      response = await apiService.getNodes(limit.value, selectedLabel.value, 0, queryMode.value)
     }
 
     results.value = response.nodes || []
@@ -1484,7 +1480,7 @@ const loadAvailableLabels = async () => {
       // 使用映射数据，但需要获取计数信息
       try {
         // 使用新的节点类型API获取数量
-        const nodeTypesResponse = await apiService.getNodeTypes()
+        const nodeTypesResponse = await apiService.getNodeTypes(queryMode.value)
         const countMap = {}
         if (nodeTypesResponse.node_types) {
           nodeTypesResponse.node_types.forEach(item => {
@@ -1542,7 +1538,7 @@ const loadAvailableLabels = async () => {
     } else {
       // 如果没有映射数据，直接使用节点类型API
       try {
-        const nodeTypesResponse = await apiService.getNodeTypes()
+        const nodeTypesResponse = await apiService.getNodeTypes(queryMode.value)
         if (nodeTypesResponse.node_types) {
           allLabels = nodeTypesResponse.node_types.map(item => ({
             neo4j_name: item.label,
@@ -1619,33 +1615,44 @@ const filterLabelsByMode = () => {
   if (!labelsCache.value.data) return
 
   if (queryMode.value === 'new-standard') {
-    // 新标准模式：显示新标准相关节点
+    // 新标准模式：显示原始节点标签（后端会筛选出与InternationalLevel有关系的）
     const newStandardLabels = [
-      'CharacterNewStandard',
-      'WordNewStandard',
-      'GrammarNewStandard',
-      // 'CulturalNewStandard', // 文化新标准
-      'QuestionNewStandard', // 题目新标准
+      'Character', // 汉字（筛选有FROM_LEVEL关系的）
+      'Word', // 词汇（筛选有FROM_LEVEL关系的）
+      'Grammar', // 语法（筛选有FROM_LEVEL关系的）
+      'Cultural', // 文化（筛选有FROM_LEVEL关系的）
+      'Question', // 题目（筛选有FROM_LEVEL关系的）
       'Pinyin',  // 拼音
       'Radical', // 部首
       'Idiom', // 成语
-      'Cultural', //文化
       'CulturalStage', // 文化大纲阶段
       'CulturalLevel1', // 一级文化项目类别
       'CulturalLevel2', // 二级文化项目类别
       'InternationalLevel', // 新标准等级
       'Error' // 偏误类型
     ]
-    availableLabels.value = labelsCache.value.data.filter(label =>
-      newStandardLabels.includes(label.neo4j_name)
-    )
+    console.log('新标准模式过滤前的标签数量:', labelsCache.value.data.length)
+    console.log('期望的新标准标签:', newStandardLabels)
+    console.log('缓存中的所有标签:', labelsCache.value.data.map(label => label.neo4j_name || label.label))
+
+    availableLabels.value = labelsCache.value.data.filter(label => {
+      const labelName = label.neo4j_name || label.label
+      const isIncluded = newStandardLabels.includes(labelName)
+      if (isIncluded) {
+        console.log(`✓ 包含标签: ${labelName}`)
+      }
+      return isIncluded
+    })
+
+    console.log('新标准模式过滤后的标签数量:', availableLabels.value.length)
+    console.log('新标准模式过滤后的标签:', availableLabels.value.map(label => label.neo4j_name || label.label))
   } else {
     // 通用模式：显示所有标签，但排除NewStandard节点
     const excludeLabels = [
       'CharacterNewStandard',
       'WordNewStandard',
       'GrammarNewStandard',
-      // 'CulturalNewStandard',
+      'CulturalNewStandard',
       'QuestionNewStandard'
     ]
     availableLabels.value = labelsCache.value.data.filter(label =>
@@ -1789,11 +1796,11 @@ const getUniqueRelationshipTypes = () => {
   if (!relationshipData.value || !relationshipData.value.relationships) {
     return []
   }
-  
+
   const types = new Set()
   relationshipData.value.relationships.forEach(record => {
     let relationshipType = null
-    
+
     // 处理不同的数据结构
     if (record.r && record.r.type) {
       relationshipType = record.r.type
@@ -1802,13 +1809,28 @@ const getUniqueRelationshipTypes = () => {
     } else if (record.type) {
       relationshipType = record.type
     }
-    
+
     if (relationshipType) {
       types.add(relationshipType)
     }
   })
-  
-  return Array.from(types).sort()
+
+  // 根据后端映射的sort_order进行排序
+  return Array.from(types).sort((a, b) => {
+    const mappingA = relationshipTypeMappings.value.find(m => m.neo4j_name === a)
+    const mappingB = relationshipTypeMappings.value.find(m => m.neo4j_name === b)
+
+    const sortOrderA = mappingA?.sort_order ?? 999 // 未映射的排在最后
+    const sortOrderB = mappingB?.sort_order ?? 999
+
+    // 按sort_order升序排列
+    if (sortOrderA !== sortOrderB) {
+      return sortOrderA - sortOrderB
+    }
+
+    // sort_order相同时按字母顺序排列
+    return a.localeCompare(b)
+  })
 }
 
 // 获取关系类型的显示名称
