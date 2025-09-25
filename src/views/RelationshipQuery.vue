@@ -941,10 +941,13 @@ const queryRelationship = async () => {
     ElMessage.warning('请选择关系类型')
     return
   }
-  
+
   loading.value = true
   searched.value = true
   const startTime = Date.now()
+
+  // 加载关系类型映射
+  await loadRelationshipTypeMappings()
   
   try {
     // 构建查询语句
@@ -1189,9 +1192,12 @@ const createNetwork = () => {
         id: relationshipId,
         from: startId,
         to: endId,
-        label: record.r.type,
-        color: { color: '#667eea', hover: '#764ba2' },
-        font: { color: '#667eea', size: 12 },
+        label: getRelationshipDisplayName(record.r.type),
+        color: {
+          color: getRelationshipColor(record.r.type),
+          hover: getRelationshipHighlightColor(record.r.type)
+        },
+        font: { color: getRelationshipColor(record.r.type), size: 12 },
         data: record.r
       })
     }
@@ -1332,17 +1338,133 @@ const createNetwork = () => {
 // 根据标签获取节点颜色
 const getNodeColor = (label) => {
   const colors = {
-    'Character': '#FF6B6B',
-    'Person': '#4ECDC4', 
-    'Location': '#45B7D1',
-    'Organization': '#96CEB4',
-    'Event': '#FECA57',
-    'Concept': '#FF9FF3',
-    'ExternalLink': '#FFA726',
-    'Pinyin': '#AB47BC',
-    'Default': '#667eea'
+    // 原始节点类型
+    'Character': '#FF6B6B',              // 红色 - 汉字
+    'Word': '#4ECDC4',                   // 青蓝色 - 词语
+    'Sentence': '#45B7D1',               // 蓝色 - 句子
+    'ExternalLink': '#96CEB4',           // 绿色 - 外部链接
+
+    // 新标准节点类型
+    'CharacterNewStandard': '#E74C3C',   // 深红色 - 新标准汉字
+    'WordNewStandard': '#3498DB',        // 深蓝色 - 新标准词语
+    'GrammarNewStandard': '#9B59B6',     // 紫色 - 新标准语法
+    'CulturalNewStandard': '#F39C12',    // 橙色 - 新标准文化
+    'QuestionNewStandard': '#E67E22',    // 橙红色 - 新标准题目
+
+    // 等级和组织节点
+    'InternationalLevel': '#2ECC71',     // 绿色 - 国际等级
+    'Level': '#27AE60',                  // 深绿色 - 等级
+    'Grade': '#16A085',                  // 青绿色 - 年级
+
+    // 语言组件节点
+    'Pinyin': '#FF9800',                 // 橙色 - 拼音
+    'Radical': '#795548',                // 棕色 - 部首
+    'Stroke': '#607D8B',                 // 蓝灰色 - 笔划
+    'Phonetic': '#FF5722',               // 深橙色 - 语音
+
+    // 文化节点
+    'CulturalOutlineStage': '#8E44AD',   // 紫色 - 文化大纲阶段
+    'PrimaryCulturalCategory': '#9B59B6', // 紫红色 - 一级文化类别
+    'SecondaryCulturalCategory': '#A569BD', // 浅紫色 - 二级文化类别
+
+    // 错误类型
+    'ErrorType': '#E74C3C',              // 红色 - 错误类型
+
+    // 其他类型
+    'Grammar': '#17A2B8',                // 青色 - 语法
+    'Vocabulary': '#20C997',             // 青绿色 - 词汇
+    'Text': '#6C757D',                   // 灰色 - 文本
+    'Concept': '#FD7E14',                // 橙色 - 概念
+    'Topic': '#DC3545',                  // 红色 - 主题
+    'Category': '#28A745',               // 绿色 - 类别
+    'Tag': '#6F42C1',                    // 紫色 - 标签
+    'Resource': '#17A2B8',               // 青色 - 资源
+    'Person': '#4ECDC4',                 // 青蓝色 - 人物
+    'Location': '#45B7D1',               // 蓝色 - 地点
+    'Organization': '#96CEB4',           // 绿色 - 组织
+    'Event': '#FECA57',                  // 黄色 - 事件
+
+    'Default': '#667EEA'                 // 深蓝紫色 - 默认
   }
   return colors[label] || colors.Default
+}
+
+// 关系类型颜色映射
+const getRelationshipColor = (relationshipType) => {
+  const colors = {
+    // 原有的关系类型
+    'HAS_PINYIN': '#E74C3C',        // 鲜艳红色 - 汉字与拼音
+    'HAS_RADICAL': '#17A2B8',       // 鲜艳青色 - 汉字与部首
+    'SYNONYM': '#007BFF',           // 鲜艳蓝色 - 近义词
+    'ANTONYM': '#28A745',           // 鲜艳绿色 - 反义词
+    'DEPENDS_ON': '#FFC107',        // 鲜艳黄色 - 学习依赖
+    'CONTAINS': '#6F42C1',          // 鲜艳紫色 - 包含关系
+    'RELATES_TO': '#FD7E14',        // 鲜艳橙色 - 相关关系
+
+    // 实际数据库中的关系类型
+    'NEAR_SYNONYMOUS_WITH': '#007BFF',    // 鲜艳蓝色 - 近义词关系
+    'ANTITHESIS_WITH': '#28A745',         // 鲜艳绿色 - 反义词关系
+    'COMPOSITION_COMPONENT': '#6F42C1',   // 鲜艳紫色 - 组成部分关系
+    'HYPERNYM_OF': '#DC3545',             // 红色 - 上位词关系
+    'HYPONYM_OF': '#FD7E14',              // 橙色 - 下位词关系
+    'MERONYM_OF': '#20C997',              // 青绿色 - 部分关系
+    'HOLONYM_OF': '#6610F2',              // 靛蓝色 - 整体关系
+    'SIMILAR_TO': '#17A2B8',              // 青色 - 相似关系
+    'RELATED_TO': '#FFC107',              // 黄色 - 相关关系
+    'DERIVES_FROM': '#E83E8C',            // 粉色 - 派生关系
+    'LEADS_TO': '#FD7E14',                // 橙色 - 导致关系
+
+    // 常见的新关系类型
+    'CILIN': '#8E44AD',                   // 紫色 - 同义词林
+    'CULTURAL_CORRELATION': '#E67E22',    // 橙红色 - 文化关联
+    'FROM_LEVEL': '#3498DB',              // 蓝色 - 来自等级
+    'HAS_CHARACTER': '#E74C3C',           // 红色 - 包含汉字
+    'HAS_COMPONENT': '#9B59B6',           // 紫红色 - 包含组件
+    'IS_COMPONENT_OF': '#8E44AD',         // 深紫色 - 是组件
+    'BELONGS_TO': '#2ECC71',              // 绿色 - 属于
+    'HAS_ERROR_TYPE': '#E74C3C',          // 红色 - 具有错误类型
+    'IN_CATEGORY': '#F39C12',             // 橙色 - 在类别中
+    'HAS_STAGE': '#16A085',               // 青绿色 - 具有阶段
+    'STRUCTURAL_RELATION': '#607D8B',     // 蓝灰色 - 结构关系
+    'SEMANTIC_RELATION': '#FF5722',       // 深橙色 - 语义关系
+    'PHONETIC_RELATION': '#FF9800',       // 橙色 - 语音关系
+    'GRAMMATICAL_RELATION': '#4CAF50',    // 绿色 - 语法关系
+
+    'default': '#95A5A6'            // 浅灰色 - 默认（比原来更明亮）
+  }
+  return colors[relationshipType] || colors.default
+}
+
+// 关系类型高亮颜色
+const getRelationshipHighlightColor = (relationshipType) => {
+  const color = getRelationshipColor(relationshipType)
+  // 简单的高亮效果，使颜色更深一些
+  return darkenColor(color, 0.2)
+}
+
+// 关系类型映射
+const relationshipTypeMappings = ref([])
+
+// 加载关系类型映射
+const loadRelationshipTypeMappings = async () => {
+  if (relationshipTypeMappings.value.length > 0) {
+    return // 已加载过
+  }
+
+  try {
+    const mappingResponse = await apiService.getLabelMappings('relationship')
+    relationshipTypeMappings.value = mappingResponse.relationship_labels || []
+    console.log('Loaded relationship type mappings:', relationshipTypeMappings.value.length)
+  } catch (error) {
+    console.error('加载关系类型映射失败:', error)
+    relationshipTypeMappings.value = []
+  }
+}
+
+// 使用后端映射获取关系类型的显示名称
+const getRelationshipDisplayName = (relationshipType) => {
+  const mapping = relationshipTypeMappings.value.find(m => m.neo4j_name === relationshipType)
+  return mapping ? (mapping.display_name || relationshipType) : relationshipType
 }
 
 // 颜色处理函数
@@ -2126,6 +2248,7 @@ onMounted(() => {
   // 初始化时加载关系类型和可用标签
   loadRelationshipTypes()
   loadAvailableLabels()
+  loadRelationshipTypeMappings()
 })
 </script>
 
