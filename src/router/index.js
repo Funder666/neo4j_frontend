@@ -4,6 +4,7 @@ import Dashboard from '../views/Dashboard.vue'
 import NodeQuery from '../views/NodeQuery.vue'
 import RelationshipQuery from '../views/RelationshipQuery.vue'
 import CypherQuery from '../views/CypherQuery.vue'
+import CorpusQuery from '../views/CorpusQuery.vue'
 import SystemConfig from '../views/SystemConfig.vue'
 
 const routes = [
@@ -38,6 +39,12 @@ const routes = [
     path: '/cypher',
     name: 'CypherQuery',
     component: CypherQuery,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/corpus',
+    name: 'CorpusQuery',
+    component: CorpusQuery,
     meta: { requiresAuth: true }
   },
   {

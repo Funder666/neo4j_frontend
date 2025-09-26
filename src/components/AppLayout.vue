@@ -95,7 +95,13 @@
               <span class="menu-text">通用查询</span>
             </div>
           </el-menu-item>
-          <el-menu-item index="/config" class="menu-item">
+          <el-menu-item index="/corpus" class="menu-item">
+            <div class="menu-content">
+              <el-icon class="menu-icon"><Document /></el-icon>
+              <span class="menu-text">语料库查询</span>
+            </div>
+          </el-menu-item>
+          <el-menu-item index="/config" class="menu-item" v-if="currentUser?.role !== 'user'">
             <div class="menu-content">
               <el-icon class="menu-icon"><Setting /></el-icon>
               <span class="menu-text">系统配置</span>
@@ -125,7 +131,8 @@ import {
   DataLine,
   Setting,
   SwitchButton,
-  EditPen
+  EditPen,
+  Document
 } from '@element-plus/icons-vue'
 import authService from '../services/auth'
 import apiService from '../services/api'
