@@ -466,10 +466,15 @@ const allOriginalEdges = ref([]) // 保存所有原始边数据
 const propertyPermissions = ref({})
 const queryMode = ref('general') // 查询模式：'general' 或 'new-standard'
 const labelsCache = ref({
-  data: null,
-  timestamp: null,
-  version: null
-}) // 标签缓存，包含数据、时间戳和版本信息
+  general: {
+    data: null,
+    timestamp: null
+  },
+  'new-standard': {
+    data: null,
+    timestamp: null
+  }
+}) // 分模式标签缓存
 
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
@@ -519,11 +524,8 @@ const onModeChange = () => {
   clearResults()
   selectedLabel.value = ''
 
-  // 模式切换时总是重新加载数据，因为不同模式下的数量统计不同
-  console.log('模式切换，强制重新加载数据以获取正确的数量统计')
-  // 清除缓存，强制重新加载
-  labelsCache.value.data = null
-  labelsCache.value.timestamp = 0
+  // 模式切换时使用缓存，如果缓存不存在或过期才重新加载
+  console.log('模式切换到:', queryMode.value)
   loadAvailableLabels()
 }
 
@@ -1464,7 +1466,8 @@ const loadAvailableLabels = async () => {
     if (isCacheValid()) {
       filterLabelsByMode()
       const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
-      console.log('使用缓存数据，缓存时间:', new Date(labelsCache.value.timestamp).toLocaleTimeString())
+      const currentCache = labelsCache.value[queryMode.value]
+      console.log('使用缓存数据，缓存时间:', new Date(currentCache.timestamp).toLocaleTimeString())
       ElMessage.success(`${modeText}模式加载了 ${availableLabels.value.length} 种节点标签 (缓存)`)
       loadingLabels.value = false
       return
@@ -1571,14 +1574,13 @@ const loadAvailableLabels = async () => {
       }
     }
 
-    // 缓存全部标签数据，包含时间戳
-    labelsCache.value = {
+    // 缓存当前模式的标签数据
+    labelsCache.value[queryMode.value] = {
       data: allLabels,
-      timestamp: Date.now(),
-      version: allLabels.length // 使用标签数量作为简单的版本号
+      timestamp: Date.now()
     }
 
-    console.log('标签数据已缓存，标签数量:', allLabels.length, '缓存时间:', new Date().toLocaleTimeString())
+    console.log(`${queryMode.value}模式标签数据已缓存，标签数量:`, allLabels.length, '缓存时间:', new Date().toLocaleTimeString())
 
     // 根据当前模式过滤标签
     filterLabelsByMode()
@@ -1596,13 +1598,14 @@ const loadAvailableLabels = async () => {
 
 // 检查缓存是否有效
 const isCacheValid = () => {
-  if (!labelsCache.value.data) return false
+  const currentCache = labelsCache.value[queryMode.value]
+  if (!currentCache || !currentCache.data) return false
 
   // 缓存过期时间：5分钟
   const CACHE_EXPIRY = 5 * 60 * 1000
   const now = Date.now()
 
-  if (labelsCache.value.timestamp && (now - labelsCache.value.timestamp) > CACHE_EXPIRY) {
+  if (currentCache.timestamp && (now - currentCache.timestamp) > CACHE_EXPIRY) {
     console.log('缓存已过期，需要重新加载')
     return false
   }
@@ -1612,7 +1615,8 @@ const isCacheValid = () => {
 
 // 根据模式过滤标签
 const filterLabelsByMode = () => {
-  if (!labelsCache.value.data) return
+  const currentCache = labelsCache.value[queryMode.value]
+  if (!currentCache || !currentCache.data) return
 
   if (queryMode.value === 'new-standard') {
     // 新标准模式：显示原始节点标签（后端会筛选出与InternationalLevel有关系的）
@@ -1629,13 +1633,13 @@ const filterLabelsByMode = () => {
       'CulturalLevel1', // 一级文化项目类别
       'CulturalLevel2', // 二级文化项目类别
       'InternationalLevel', // 新标准等级
-      'Error' // 偏误类型
+      'Syllable', // 音节
     ]
-    console.log('新标准模式过滤前的标签数量:', labelsCache.value.data.length)
+    console.log('新标准模式过滤前的标签数量:', currentCache.data.length)
     console.log('期望的新标准标签:', newStandardLabels)
-    console.log('缓存中的所有标签:', labelsCache.value.data.map(label => label.neo4j_name || label.label))
+    console.log('缓存中的所有标签:', currentCache.data.map(label => label.neo4j_name || label.label))
 
-    availableLabels.value = labelsCache.value.data.filter(label => {
+    availableLabels.value = currentCache.data.filter(label => {
       const labelName = label.neo4j_name || label.label
       const isIncluded = newStandardLabels.includes(labelName)
       if (isIncluded) {
@@ -1655,7 +1659,7 @@ const filterLabelsByMode = () => {
       'CulturalNewStandard',
       'QuestionNewStandard'
     ]
-    availableLabels.value = labelsCache.value.data.filter(label =>
+    availableLabels.value = currentCache.data.filter(label =>
       !excludeLabels.includes(label.neo4j_name)
     )
   }
