@@ -524,6 +524,7 @@ const satisfactionRating = ref(null) // 满意度评价: 'satisfied' | 'unsatisf
 // 权限和标签映射相关
 const availableLabels = ref([])
 const propertyPermissions = ref({})
+const relationshipTypeMappings = ref([]) // 关系类型映射
 const nodeDialog = ref({
   visible: false,
   loading: false,
@@ -1086,7 +1087,7 @@ const getRelationshipArrowStyle = (relationshipType) => {
 // 获取当前查询结果中的唯一关系类型
 const getUniqueRelationshipTypes = () => {
   if (!results.value.length) return []
-  
+
   const types = new Set()
   results.value.forEach(record => {
     Object.values(record).forEach(value => {
@@ -1095,26 +1096,29 @@ const getUniqueRelationshipTypes = () => {
       }
     })
   })
-  
-  return Array.from(types).sort()
+
+  // 根据后端映射的sort_order进行排序
+  return Array.from(types).sort((a, b) => {
+    const mappingA = relationshipTypeMappings.value.find(m => m.neo4j_name === a)
+    const mappingB = relationshipTypeMappings.value.find(m => m.neo4j_name === b)
+
+    const sortOrderA = mappingA?.sort_order ?? 999 // 未映射的排在最后
+    const sortOrderB = mappingB?.sort_order ?? 999
+
+    // 按sort_order升序排列
+    if (sortOrderA !== sortOrderB) {
+      return sortOrderA - sortOrderB
+    }
+
+    // sort_order相同时按字母顺序排列
+    return a.localeCompare(b)
+  })
 }
 
 // 获取关系类型的显示名称
 const getRelationshipDisplayName = (relationshipType) => {
-  const displayNames = {
-    'NEAR_SYNONYMOUS_WITH': '近义词',
-    'ANTITHESIS_WITH': '反义词',
-    'COMPOSITION_COMPONENT': '组成部分',
-    'HYPERNYM_OF': '上位词',
-    'HYPONYM_OF': '下位词', 
-    'MERONYM_OF': '部分关系',
-    'HOLONYM_OF': '整体关系',
-    'SIMILAR_TO': '相似关系',
-    'RELATED_TO': '相关关系',
-    'DERIVES_FROM': '派生关系',
-    'LEADS_TO': '导致关系'
-  }
-  return displayNames[relationshipType] || relationshipType
+  const mapping = relationshipTypeMappings.value.find(m => m.neo4j_name === relationshipType)
+  return mapping ? mapping.display_name : relationshipType
 }
 
 // 获取图例线条样式 - 参照NodeQuery.vue的实现
@@ -1406,14 +1410,30 @@ const loadNodePropertyMappings = async (nodeData) => {
 }
 
 // 在组件加载时获取标签映射和权限配置（预加载常用的映射）
+// 加载关系类型映射
+const loadRelationshipTypeMappings = async () => {
+  if (relationshipTypeMappings.value.length > 0) {
+    return // 已加载过
+  }
+
+  try {
+    const mappingResponse = await apiService.getLabelMappings('relationship')
+    relationshipTypeMappings.value = mappingResponse.relationship_labels || []
+    console.log('加载关系类型映射:', relationshipTypeMappings.value.length)
+  } catch (error) {
+    console.error('加载关系类型映射失败:', error)
+    relationshipTypeMappings.value = []
+  }
+}
+
 const loadLabelMappings = async () => {
   try {
     const mappingResponse = await apiService.getLabelMappings('node')
     const nodeMappings = mappingResponse.node_labels || []
-    
+
     console.log('API响应:', mappingResponse)
     console.log('预加载的标签映射:', nodeMappings)
-    
+
     if (nodeMappings.length > 0) {
       availableLabels.value = nodeMappings.map(mapping => ({
         id: mapping.id,
@@ -1421,9 +1441,9 @@ const loadLabelMappings = async () => {
         display_name: mapping.display_name,
         description: mapping.description
       }))
-      
+
       console.log('处理后的标签映射:', availableLabels.value)
-      
+
       // 同时加载每个节点标签的属性权限
       console.log('开始预加载属性权限...')
       for (const mapping of nodeMappings) {
@@ -1898,6 +1918,7 @@ watch(queryMode, (newMode) => {
 // 在组件挂载时预加载标签映射
 onMounted(() => {
   loadLabelMappings()
+  loadRelationshipTypeMappings()
 })
 
 </script>
