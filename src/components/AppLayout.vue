@@ -119,7 +119,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -149,6 +149,7 @@ const router = useRouter()
 
 const currentUser = ref(authService.getCurrentUser())
 const connectionStatus = ref('检查中...')
+let healthCheckTimer = null
 
 const activeMenu = computed(() => route.path)
 
@@ -200,14 +201,36 @@ const getStatusClass = () => {
   return 'checking'
 }
 
-onMounted(async () => {
-  // 检查后端服务连接状态
+// 检查服务健康状态
+const checkHealth = async () => {
   try {
-    const response = await apiService.healthCheck()
-    connectionStatus.value = '服务正常'
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+    await apiService.healthCheck()
+    clearTimeout(timeoutId)
+
+    if (connectionStatus.value !== '服务正常') {
+      connectionStatus.value = '服务正常'
+    }
   } catch (error) {
     console.error('检查服务状态失败:', error)
     connectionStatus.value = '服务离线'
+  }
+}
+
+onMounted(async () => {
+  // 立即执行一次健康检查
+  await checkHealth()
+
+  // 每30秒检查一次服务状态
+  healthCheckTimer = setInterval(checkHealth, 30000)
+})
+
+onUnmounted(() => {
+  // 清理定时器
+  if (healthCheckTimer) {
+    clearInterval(healthCheckTimer)
   }
 })
 </script>
