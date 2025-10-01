@@ -804,12 +804,36 @@ const createNetwork = async () => {
   const edges = []
   let relationshipCount = 0
 
+  // 检测是否为关系查询 (查询结果中包含关系数据)
+  const hasRelationships = results.value.some(record =>
+    Object.values(record).some(value =>
+      value && typeof value === 'object' && value.type && value.start_node_id !== undefined && value.end_node_id !== undefined
+    )
+  )
+
+  // 如果是关系查询，收集所有相关的节点ID
+  const relevantNodeIds = new Set()
+  if (hasRelationships) {
+    results.value.forEach(record => {
+      Object.values(record).forEach(value => {
+        if (value && typeof value === 'object' && value.type && value.start_node_id !== undefined && value.end_node_id !== undefined) {
+          relevantNodeIds.add(value.start_node_id)
+          relevantNodeIds.add(value.end_node_id)
+        }
+      })
+    })
+  }
+
   // 遍历查询结果，提取节点和关系
   results.value.forEach((record, index) => {
     Object.values(record).forEach(value => {
       // 处理节点数据
       if (value && typeof value === 'object' && value.labels && value.properties !== undefined) {
         const node = value
+        // 如果是关系查询，只包含与关系相关的节点
+        if (hasRelationships && !relevantNodeIds.has(node.id)) {
+          return
+        }
         if (!nodesMap.has(node.id)) {
           nodesMap.set(node.id, {
             id: node.id,
