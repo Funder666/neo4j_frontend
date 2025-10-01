@@ -152,8 +152,14 @@
               {{ showingRelationships ? '关系图' : '查询结果' }}
             </h3>
             <div class="results-stats">
-              <span class="result-count">{{ showingRelationships ? (relationshipData?.relationships?.length || 0) : results.length }}</span>
+              <span class="result-count">
+                {{ showingRelationships ? totalRelationships : results.length }}
+              </span>
               <span class="result-text">{{ showingRelationships ? '个关系' : '个节点' }}</span>
+            </div>
+            <div v-if="showingRelationships && totalRelationships > RELATIONSHIP_LIMIT" class="limit-warning">
+              <el-icon><Warning /></el-icon>
+              <span>仅显示前 {{ RELATIONSHIP_LIMIT }} 个关系</span>
             </div>
           </div>
           <div class="results-actions">
@@ -435,7 +441,9 @@ import {
   Setting,
   DataLine,
   Loading,
-  Star
+  Star,
+  Warning,
+  ArrowLeft
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -1126,15 +1134,27 @@ const showNodeRelationships = async (node) => {
   }
 }
 
+// 关系数量限制
+const RELATIONSHIP_LIMIT = 100 // 最大显示关系数
+const totalRelationships = ref(0)
+
 // 创建关系网络图
 const createRelationshipNetwork = (centerNode, relationships) => {
   if (!networkContainer.value) return
 
+  totalRelationships.value = relationships.length
   console.log('Creating relationship network with:', {
     centerNode,
     relationships,
-    relationshipsLength: relationships.length
+    relationshipsLength: relationships.length,
+    limit: RELATIONSHIP_LIMIT
   })
+
+  // 如果关系太多，显示警告并限制数量
+  if (relationships.length > RELATIONSHIP_LIMIT) {
+    ElMessage.warning(`关系数量过多 (${relationships.length})，仅显示前 ${RELATIONSHIP_LIMIT} 个关系以保证性能`)
+    relationships = relationships.slice(0, RELATIONSHIP_LIMIT)
+  }
 
   // 清理旧的网络
   if (network.value) {
@@ -1387,14 +1407,23 @@ const createRelationshipNetwork = (centerNode, relationships) => {
     },
     physics: {
       enabled: true,
-      stabilization: { iterations: 200 },
+      stabilization: {
+        iterations: Math.min(300, Math.max(100, relationships.length * 2)),
+        updateInterval: 25,
+        onlyDynamicEdges: false,
+        fit: true
+      },
       barnesHut: {
-        gravitationalConstant: -3000,
-        centralGravity: 0.5,
-        springLength: 150,
-        springConstant: 0.06,
-        damping: 0.1
-      }
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: relationships.length > 50 ? 200 : 150,
+        springConstant: relationships.length > 50 ? 0.03 : 0.06,
+        damping: relationships.length > 50 ? 0.2 : 0.1,
+        avoidOverlap: 0.1
+      },
+      maxVelocity: 30,
+      minVelocity: 0.1,
+      timestep: 0.5
     },
     layout: {
       improvedLayout: true
@@ -2409,6 +2438,23 @@ onMounted(() => {
 .export-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 12px rgba(144, 147, 153, 0.3);
+}
+
+.limit-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: rgba(245, 166, 35, 0.1);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+  border-radius: 8px;
+  font-size: 12px;
+  color: #e6a23c;
+}
+
+.limit-warning .el-icon {
+  font-size: 14px;
 }
 
 /* 图形视图样式 */

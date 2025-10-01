@@ -186,9 +186,13 @@
                   <span v-if="graphData?.nodes" class="graph-stats">
                     | {{ graphData.nodes.length }} 个节点
                     <span v-if="graphData?.edges">
-                      | {{ graphData.edges.length }} 个关系
+                      | {{ totalRelationships || graphData.edges.length }} 个关系
                     </span>
                   </span>
+                </div>
+                <div v-if="totalRelationships > RELATIONSHIP_LIMIT" class="limit-warning">
+                  <el-icon><Warning /></el-icon>
+                  <span>仅显示前 {{ RELATIONSHIP_LIMIT }} 个关系</span>
                 </div>
               </div>
 
@@ -275,15 +279,24 @@
                 </h4>
               </div>
               <div class="legend-content">
-                <div 
-                  v-for="relationshipType in getUniqueRelationshipTypes()"
+                <div
+                  v-for="(relationshipType, index) in getUniqueRelationshipTypes()"
                   :key="relationshipType"
                   class="legend-item"
                 >
                   <div class="legend-line" :style="getLegendLineStyle(relationshipType)"></div>
-                  <span class="legend-label" :style="{ color: getRelationshipColor(relationshipType) }">
+                  <span
+                    class="legend-label"
+                    :style="{ color: getRelationshipColor(relationshipType) }"
+                    @click="toggleRelationshipType(relationshipType)"
+                  >
                     {{ getRelationshipDisplayName(relationshipType) }}
                   </span>
+                  <el-checkbox
+                    class="legend-checkbox"
+                    :model-value="selectedRelationshipTypes.has(relationshipType)"
+                    @change="(checked) => handleCheckboxChange(relationshipType, checked)"
+                  />
                 </div>
               </div>
             </div>
@@ -494,7 +507,8 @@ import {
   ArrowDown,
   MagicStick,
   View,
-  Select
+  Select,
+  Warning
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -525,6 +539,11 @@ const satisfactionRating = ref(null) // 满意度评价: 'satisfied' | 'unsatisf
 const availableLabels = ref([])
 const propertyPermissions = ref({})
 const relationshipTypeMappings = ref([]) // 关系类型映射
+const selectedRelationshipTypes = ref(new Set()) // 选中的关系类型
+const allOriginalEdges = ref([]) // 所有原始边数据
+const allOriginalNodes = ref(new Map()) // 所有原始节点数据
+const totalRelationships = ref(0) // 总关系数
+const RELATIONSHIP_LIMIT = 100 // 最大显示关系数
 const nodeDialog = ref({
   visible: false,
   loading: false,
@@ -592,6 +611,10 @@ const clearResults = () => {
   selectedNode.value = null
   satisfactionRating.value = null // 重置满意度评价
   viewMode.value = 'graph'
+  selectedRelationshipTypes.value.clear() // 清空关系类型选择
+  allOriginalEdges.value = [] // 清空原始边数据
+  allOriginalNodes.value.clear() // 清空原始节点数据
+  totalRelationships.value = 0 // 重置关系总数
   if (network.value) {
     network.value.destroy()
     network.value = null
@@ -638,8 +661,8 @@ const executeQuery = async () => {
 
       // 默认显示图形视图
       viewMode.value = 'graph'
-      nextTick(() => {
-        createNetwork()
+      nextTick(async () => {
+        await createNetwork()
       })
     }
   } catch (error) {
@@ -663,8 +686,8 @@ const executeQuery = async () => {
 // 监听视图模式变化
 watch(viewMode, (newMode) => {
   if (newMode === 'graph' && results.value.length > 0) {
-    nextTick(() => {
-      createNetwork()
+    nextTick(async () => {
+      await createNetwork()
     })
   }
 })
@@ -763,7 +786,7 @@ const exportAsText = () => {
   ElMessage.success('TXT文件导出成功')
 }
 
-const createNetwork = () => {
+const createNetwork = async () => {
   if (!networkContainer.value || !results.value.length) return
 
   // 清理旧的网络
@@ -771,11 +794,15 @@ const createNetwork = () => {
     network.value.destroy()
   }
 
+  // 加载关系类型映射
+  await loadRelationshipTypeMappings()
+
   console.log('Cypher查询结果结构:', results.value[0])
 
   // 处理节点和关系数据
   const nodesMap = new Map()
   const edges = []
+  let relationshipCount = 0
 
   // 遍历查询结果，提取节点和关系
   results.value.forEach((record, index) => {
@@ -813,17 +840,24 @@ const createNetwork = () => {
       }
       // 处理关系数据
       else if (value && typeof value === 'object' && value.type && value.start_node_id !== undefined && value.end_node_id !== undefined) {
+        relationshipCount++
+
+        // 如果超过限制，跳过后续关系的处理
+        if (relationshipCount > RELATIONSHIP_LIMIT) {
+          return
+        }
+
         const relationship = value
         const edgeColor = getRelationshipColor(relationship.type)
         const highlightColor = getRelationshipHighlightColor(relationship.type)
         const lineStyle = getRelationshipLineStyle(relationship.type)
         const arrowStyle = getRelationshipArrowStyle(relationship.type)
-        
+
         edges.push({
           id: relationship.id || `edge_${index}`,
           from: relationship.start_node_id,
           to: relationship.end_node_id,
-          label: relationship.type,
+          label: getRelationshipDisplayName(relationship.type),
           title: `关系类型: ${relationship.type}\n属性: ${relationship.properties ? JSON.stringify(relationship.properties) : '无'}`,
           color: {
             color: edgeColor,
@@ -855,14 +889,29 @@ const createNetwork = () => {
           },
           width: lineStyle.width,
           dashes: lineStyle.dashes,
+          relationshipType: relationship.type, // 添加关系类型信息用于筛选
           data: relationship
         })
       }
     })
   })
 
+  // 设置总关系数并显示警告
+  totalRelationships.value = relationshipCount
+  if (relationshipCount > RELATIONSHIP_LIMIT) {
+    ElMessage.warning(`关系数量过多 (${relationshipCount})，仅显示前 ${RELATIONSHIP_LIMIT} 个关系以保证性能`)
+  }
+
   const nodes = Array.from(nodesMap.values())
   const data = { nodes, edges }
+
+  // 保存原始数据用于筛选
+  allOriginalEdges.value = edges.slice()
+  allOriginalNodes.value = new Map(nodesMap)
+
+  // 初始化选中所有关系类型
+  const allTypes = getUniqueRelationshipTypes()
+  selectedRelationshipTypes.value = new Set(allTypes)
 
   const options = {
     nodes: {
@@ -917,14 +966,23 @@ const createNetwork = () => {
     },
     physics: {
       enabled: true,
-      stabilization: { iterations: 200 },
+      stabilization: {
+        iterations: Math.min(300, Math.max(100, edges.length * 2)),
+        updateInterval: 25,
+        onlyDynamicEdges: false,
+        fit: true
+      },
       barnesHut: {
-        gravitationalConstant: -3000,
-        centralGravity: 0.5,
-        springLength: 150,
-        springConstant: 0.06,
-        damping: 0.1
-      }
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: edges.length > 50 ? 200 : 150,
+        springConstant: edges.length > 50 ? 0.03 : 0.06,
+        damping: edges.length > 50 ? 0.2 : 0.1,
+        avoidOverlap: 0.1
+      },
+      maxVelocity: 30,
+      minVelocity: 0.1,
+      timestep: 0.5
     },
     layout: {
       improvedLayout: true
@@ -1086,6 +1144,34 @@ const getRelationshipArrowStyle = (relationshipType) => {
 
 // 获取当前查询结果中的唯一关系类型
 const getUniqueRelationshipTypes = () => {
+  // 优先从缓存的边数据中获取关系类型（用于关系网络显示）
+  if (allOriginalEdges.value && allOriginalEdges.value.length > 0) {
+    const types = new Set()
+    allOriginalEdges.value.forEach(edge => {
+      if (edge.relationshipType) {
+        types.add(edge.relationshipType)
+      }
+    })
+
+    // 根据后端映射的sort_order进行排序
+    return Array.from(types).sort((a, b) => {
+      const mappingA = relationshipTypeMappings.value.find(m => m.neo4j_name === a)
+      const mappingB = relationshipTypeMappings.value.find(m => m.neo4j_name === b)
+
+      const sortOrderA = mappingA?.sort_order ?? 999 // 未映射的排在最后
+      const sortOrderB = mappingB?.sort_order ?? 999
+
+      // 按sort_order升序排列
+      if (sortOrderA !== sortOrderB) {
+        return sortOrderA - sortOrderB
+      }
+
+      // sort_order相同时按字母顺序排列
+      return a.localeCompare(b)
+    })
+  }
+
+  // 如果没有缓存的边数据，从查询结果中获取
   if (!results.value.length) return []
 
   const types = new Set()
@@ -1247,12 +1333,12 @@ const canDeleteNode = (node) => {
 const showNodeRelationships = async (node) => {
   try {
     loading.value = true
-    
+
     // 获取节点的所有关系
     const response = await apiService.getNodeRelationships(node.id)
-    
+
     console.log('API response for node relationships:', response)
-    
+
     // 检查不同可能的数据结构
     let relationships = null
     if (response.relationships) {
@@ -1262,22 +1348,17 @@ const showNodeRelationships = async (node) => {
     } else if (Array.isArray(response)) {
       relationships = response
     }
-    
+
     if (!relationships || relationships.length === 0) {
       ElMessage.info('该节点没有关联的关系')
       return
     }
-    
+
     console.log('Processed relationships:', relationships)
-    
-    // 将关系数据转换为可视化格式并更新结果
-    results.value = relationships
-    
-    // 重新创建网络图
-    nextTick(() => {
-      createNetwork()
-    })
-    
+
+    // 创建独立的关系网络，只包含中心节点和相关节点
+    await createRelationshipNetwork(node, relationships)
+
     ElMessage.success(`找到 ${relationships.length} 个关联关系`)
   } catch (error) {
     console.error('获取节点关系失败:', error)
@@ -1325,7 +1406,7 @@ const deleteNode = async (node) => {
     
     // 重新创建网络图
     if (results.value.length > 0) {
-      createNetwork()
+      await createNetwork()
     } else {
       // 如果没有节点了，清空网络图
       if (network.value) {
@@ -1821,8 +1902,8 @@ const executeSmartQuery = async () => {
 
         // 默认显示图形视图
         viewMode.value = 'graph'
-        nextTick(() => {
-          createNetwork()
+        nextTick(async () => {
+          await createNetwork()
         })
       }
     } catch (queryError) {
@@ -1890,6 +1971,325 @@ const submitSatisfactionRating = (rating) => {
     timestamp: new Date().toISOString(),
     resultCount: results.value.length
   })
+}
+
+// 创建独立的关系网络（仅显示中心节点和相关节点）
+const createRelationshipNetwork = async (centerNode, relationships) => {
+  if (!networkContainer.value) return
+
+  totalRelationships.value = relationships.length
+  console.log('Creating relationship network with:', {
+    centerNode,
+    relationships,
+    relationshipsLength: relationships.length,
+    limit: RELATIONSHIP_LIMIT
+  })
+
+  // 如果关系太多，显示警告并限制数量
+  if (relationships.length > RELATIONSHIP_LIMIT) {
+    ElMessage.warning(`关系数量过多 (${relationships.length})，仅显示前 ${RELATIONSHIP_LIMIT} 个关系以保证性能`)
+    relationships = relationships.slice(0, RELATIONSHIP_LIMIT)
+  }
+
+  // 清理旧的网络
+  if (network.value) {
+    network.value.destroy()
+  }
+
+  // 构建节点和边数据
+  const nodesMap = new Map()
+  const edges = []
+
+  // 添加中心节点
+  nodesMap.set(centerNode.id, {
+    id: centerNode.id,
+    label: truncateText((centerNode.properties && centerNode.properties.name) ||
+           (centerNode.properties && centerNode.properties.value ? centerNode.properties.value.trim() : '') ||
+           `节点 ${centerNode.id}`, 10),
+    group: (centerNode.labels && centerNode.labels[0]) || 'Unknown',
+    title: `${(centerNode.properties && centerNode.properties.name) || (centerNode.properties && centerNode.properties.value ? centerNode.properties.value.trim() : '') || `节点 ${centerNode.id}`}\nID: ${centerNode.id}\n标签: ${centerNode.labels ? centerNode.labels.join(', ') : 'Unknown'}\n属性: ${centerNode.properties ? Object.keys(centerNode.properties).length : 0} 个`,
+    color: {
+      background: '#FF6B6B', // 中心节点使用特殊颜色
+      border: '#E55654'
+    },
+    font: {
+      color: '#2c3e50',
+      size: 24, // 中心节点更大
+      face: 'Arial, sans-serif',
+      strokeWidth: 2,
+      strokeColor: '#ffffff'
+    },
+    shape: 'circle',
+    size: 80, // 中心节点更大
+    data: centerNode,
+    borderWidth: 4
+  })
+
+  // 处理关系数据
+  relationships.forEach((record, index) => {
+    console.log('Processing relationship record:', index, record)
+
+    let startNode, relationship, endNode
+
+    if (record.n && record.r && record.m) {
+      startNode = record.n
+      relationship = record.r
+      endNode = record.m
+    } else if (record.start_node && record.relationship && record.end_node) {
+      startNode = record.start_node
+      relationship = record.relationship
+      endNode = record.end_node
+    } else if (record.type && (record.start_node_id || record.end_node_id)) {
+      relationship = record
+      if (record.start_node) startNode = record.start_node
+      if (record.end_node) endNode = record.end_node
+    }
+
+    if (!relationship || !relationship.type) {
+      console.log('Invalid relationship data:', record)
+      return
+    }
+
+    // 添加相关节点
+    if (startNode && !nodesMap.has(startNode.id)) {
+      nodesMap.set(startNode.id, {
+        id: startNode.id,
+        label: truncateText((startNode.properties && startNode.properties.name) ||
+               (startNode.properties && startNode.properties.value ? startNode.properties.value.trim() : '') ||
+               `节点 ${startNode.id}`, 10),
+        group: (startNode.labels && startNode.labels[0]) || 'Unknown',
+        title: `${(startNode.properties && startNode.properties.name) || (startNode.properties && startNode.properties.value ? startNode.properties.value.trim() : '') || `节点 ${startNode.id}`}\nID: ${startNode.id}\n标签: ${startNode.labels ? startNode.labels.join(', ') : 'Unknown'}\n属性: ${startNode.properties ? Object.keys(startNode.properties).length : 0} 个`,
+        color: {
+          background: getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'),
+          border: darkenColor(getNodeColor((startNode.labels && startNode.labels[0]) || 'Default'), 0.3)
+        },
+        font: {
+          color: '#2c3e50',
+          size: 16,
+          face: 'Arial, sans-serif',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        shape: 'circle',
+        size: 50,
+        data: startNode,
+        borderWidth: 2
+      })
+    }
+
+    if (endNode && !nodesMap.has(endNode.id)) {
+      nodesMap.set(endNode.id, {
+        id: endNode.id,
+        label: truncateText((endNode.properties && endNode.properties.name) ||
+               (endNode.properties && endNode.properties.value ? endNode.properties.value.trim() : '') ||
+               `节点 ${endNode.id}`, 10),
+        group: (endNode.labels && endNode.labels[0]) || 'Unknown',
+        title: `${(endNode.properties && endNode.properties.name) || (endNode.properties && endNode.properties.value ? endNode.properties.value.trim() : '') || `节点 ${endNode.id}`}\nID: ${endNode.id}\n标签: ${endNode.labels ? endNode.labels.join(', ') : 'Unknown'}\n属性: ${endNode.properties ? Object.keys(endNode.properties).length : 0} 个`,
+        color: {
+          background: getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'),
+          border: darkenColor(getNodeColor((endNode.labels && endNode.labels[0]) || 'Default'), 0.3)
+        },
+        font: {
+          color: '#2c3e50',
+          size: 16,
+          face: 'Arial, sans-serif',
+          strokeWidth: 2,
+          strokeColor: '#ffffff'
+        },
+        shape: 'circle',
+        size: 50,
+        data: endNode,
+        borderWidth: 2
+      })
+    }
+
+    // 添加边
+    const lineStyle = getRelationshipLineStyle(relationship.type)
+    const arrowStyle = getRelationshipArrowStyle(relationship.type)
+
+    edges.push({
+      id: `edge_${relationship.start_node_id || startNode?.id}_${relationship.end_node_id || endNode?.id}_${relationship.type}_${index}`,
+      from: relationship.start_node_id || startNode?.id,
+      to: relationship.end_node_id || endNode?.id,
+      label: getRelationshipDisplayName(relationship.type),
+      color: getRelationshipColor(relationship.type),
+      dashes: lineStyle.dashes || false,
+      width: lineStyle.width,
+      arrows: { to: { enabled: true, type: arrowStyle.type, scaleFactor: arrowStyle.scaleFactor } },
+      font: { align: 'middle', background: 'rgba(255,255,255,0.8)', strokeWidth: 1, strokeColor: '#ffffff' },
+      data: relationship,
+      relationshipType: relationship.type
+    })
+  })
+
+  const nodes = Array.from(nodesMap.values())
+  const data = { nodes, edges }
+
+  // 保存原始数据用于筛选
+  allOriginalEdges.value = edges.slice()
+  allOriginalNodes.value = new Map(nodesMap)
+
+  // 加载关系类型映射
+  await loadRelationshipTypeMappings()
+
+  // 初始化选中所有关系类型
+  const allTypes = [...new Set(edges.map(edge => edge.relationshipType))]
+  selectedRelationshipTypes.value = new Set(allTypes)
+
+  // 创建网络
+  const options = {
+    nodes: {
+      borderWidth: 3,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.2)',
+        size: 10,
+        x: 2,
+        y: 2
+      }
+    },
+    edges: {
+      shadow: {
+        enabled: true,
+        color: 'rgba(0,0,0,0.15)',
+        size: 8,
+        x: 2,
+        y: 2
+      },
+      smooth: {
+        enabled: true,
+        type: 'dynamic'
+      }
+    },
+    interaction: {
+      hover: true,
+      selectConnectedEdges: true,
+      tooltipDelay: 300
+    },
+    physics: {
+      enabled: true,
+      stabilization: {
+        iterations: Math.min(300, Math.max(100, edges.length * 2)),
+        updateInterval: 25,
+        onlyDynamicEdges: false,
+        fit: true
+      },
+      barnesHut: {
+        gravitationalConstant: -2000,
+        centralGravity: 0.3,
+        springLength: edges.length > 50 ? 200 : 150,
+        springConstant: edges.length > 50 ? 0.03 : 0.06,
+        damping: edges.length > 50 ? 0.2 : 0.1,
+        avoidOverlap: 0.1
+      }
+    }
+  }
+
+  network.value = new Network(networkContainer.value, data, options)
+
+  // 监听节点选择事件
+  network.value.on('selectNode', (params) => {
+    if (params.nodes.length > 0) {
+      const nodeId = params.nodes[0]
+      const nodeData = nodesMap.get(nodeId)
+      if (nodeData) {
+        selectedNode.value = nodeData.data
+      }
+    }
+  })
+
+  // 监听空白区域点击
+  network.value.on('deselectNode', () => {
+    selectedNode.value = null
+  })
+}
+
+// 关系筛选功能
+const toggleRelationshipType = (relationshipType) => {
+  const currentlySelected = selectedRelationshipTypes.value.has(relationshipType)
+  if (currentlySelected) {
+    selectedRelationshipTypes.value.delete(relationshipType)
+  } else {
+    selectedRelationshipTypes.value.add(relationshipType)
+  }
+  updateRelationshipNetwork()
+}
+
+const handleCheckboxChange = (relationshipType, checked) => {
+  if (checked) {
+    selectedRelationshipTypes.value.add(relationshipType)
+  } else {
+    selectedRelationshipTypes.value.delete(relationshipType)
+  }
+  updateRelationshipNetwork()
+}
+
+const updateRelationshipNetwork = () => {
+  if (!network.value || !allOriginalEdges.value.length || !allOriginalNodes.value.size) {
+    console.log('Cannot update network: missing dependencies')
+    return
+  }
+
+  try {
+    console.log('Updating relationship network, selected types:', Array.from(selectedRelationshipTypes.value))
+
+    // 获取数据集
+    const edgeDataSet = network.value.body.data.edges
+    const nodeDataSet = network.value.body.data.nodes
+
+    // 如果没有选中任何关系类型，只清除边，保留所有节点
+    if (selectedRelationshipTypes.value.size === 0) {
+      console.log('No relationship types selected - showing all nodes with no edges')
+      edgeDataSet.clear()
+      return
+    }
+
+    // 筛选边
+    const filteredEdges = allOriginalEdges.value.filter(edge => {
+      const relationshipType = edge.relationshipType || edge.data?.type
+      return selectedRelationshipTypes.value.has(relationshipType)
+    })
+
+    console.log('Filtered edges:', filteredEdges.length, 'out of', allOriginalEdges.value.length)
+
+    // 获取参与筛选关系的节点ID
+    const participatingNodeIds = new Set()
+    filteredEdges.forEach(edge => {
+      participatingNodeIds.add(edge.from)
+      participatingNodeIds.add(edge.to)
+    })
+
+    // 从原始节点数据中过滤出参与关系的节点
+    const filteredNodes = []
+    participatingNodeIds.forEach(nodeId => {
+      const originalNode = allOriginalNodes.value.get(nodeId)
+      if (originalNode) {
+        filteredNodes.push(originalNode)
+      }
+    })
+
+    console.log(`Filtered to ${filteredNodes.length} nodes out of ${allOriginalNodes.value.size} total nodes`)
+
+    // 更新边
+    edgeDataSet.clear()
+    if (filteredEdges.length > 0) {
+      edgeDataSet.add(filteredEdges)
+    }
+
+    // 更新节点
+    nodeDataSet.clear()
+    if (filteredNodes.length > 0) {
+      nodeDataSet.add(filteredNodes)
+    }
+
+  } catch (error) {
+    console.error('Error updating relationship network:', error)
+    // 如果更新失败，重新创建整个网络
+    console.log('Recreating entire network due to update error')
+    setTimeout(async () => {
+      await createNetwork()
+    }, 100)
+  }
 }
 
 // 监听查询模式变化，清理相关状态
@@ -2486,6 +2886,57 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  flex: 1;
+}
+
+.legend-label:hover {
+  opacity: 0.8;
+}
+
+.legend-checkbox {
+  margin: 0;
+  cursor: pointer;
+}
+
+.legend-checkbox :deep(.el-checkbox) {
+  height: auto;
+  line-height: normal;
+}
+
+.legend-checkbox :deep(.el-checkbox__input) {
+  line-height: normal;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.legend-item:hover {
+  background: rgba(102, 126, 234, 0.05);
+}
+
+.limit-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  margin-top: 8px;
+  background: rgba(245, 166, 35, 0.1);
+  border: 1px solid rgba(245, 166, 35, 0.3);
+  border-radius: 8px;
+  font-size: 12px;
+  color: #e6a23c;
+}
+
+.limit-warning .el-icon {
+  font-size: 14px;
 }
 
 .network-container {
