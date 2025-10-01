@@ -1689,9 +1689,9 @@ Cypher: MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n
 理解：查询Character标签，使用数字比较
 Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n
 
-用户问题："查找'天'字的近义词关系"
+用户问题："查找'喜爱'词汇的近义词关系"
 理解：近义词关系对应NEAR_SYNONYMOUS_WITH
-Cypher: MATCH (n:Character {name: '天'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m
+Cypher: MATCH (n:Word {name: '喜爱'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m
 
 用户问题："国际中文教育中文水平1级的词语"
 理解：国际中文教育等级通过关系连接，等级节点的value为1，要词语和等级的关系！
