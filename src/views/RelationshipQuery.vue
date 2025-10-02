@@ -29,7 +29,21 @@
               <el-icon><Share /></el-icon>
               关系类型
             </h3>
-            <p class="section-subtitle">点击关系类型查看相关连接</p>
+            <p class="section-subtitle">选择查询模式并点击关系类型查看相关连接</p>
+          </div>
+
+          <!-- 查询模式选择 -->
+          <div class="query-mode-selector">
+            <el-radio-group v-model="queryMode" @change="onModeChange" class="mode-group">
+              <el-radio-button label="general">
+                <el-icon><Share /></el-icon>
+                通用模式
+              </el-radio-button>
+              <el-radio-button label="new-standard">
+                <el-icon><Star /></el-icon>
+                国际中文教育标准模式
+              </el-radio-button>
+            </el-radio-group>
           </div>
           
           <div class="types-content">
@@ -737,13 +751,13 @@
 import { ref, reactive, onMounted, nextTick, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
-  Search, 
-  RefreshRight, 
-  Share, 
-  Download, 
-  InfoFilled, 
-  TrendCharts, 
+import {
+  Search,
+  RefreshRight,
+  Share,
+  Download,
+  InfoFilled,
+  TrendCharts,
   Setting,
   DataLine,
   HomeFilled,
@@ -753,7 +767,8 @@ import {
   Delete,
   User,
   Plus,
-  Right
+  Right,
+  Star
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -782,6 +797,7 @@ const nodeLimit = ref(25)
 const startNodeFilter = ref('')
 const endNodeFilter = ref('')
 const propertyPermissions = ref({})
+const queryMode = ref('general')
 
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
@@ -848,31 +864,54 @@ const endNodeOptions = ref([])    // 结束节点搜索结果
 const startNodeLoading = ref(false)
 const endNodeLoading = ref(false)
 
+// 关系类型缓存
+const relationshipTypesCache = ref({
+  general: {
+    data: null,
+    timestamp: null
+  },
+  'new-standard': {
+    data: null,
+    timestamp: null
+  }
+})
+
 // 加载关系类型
 const loadRelationshipTypes = async () => {
   loadingTypes.value = true
   try {
+    // 检查缓存
+    if (isCacheValid()) {
+      const currentCache = relationshipTypesCache.value[queryMode.value]
+      relationshipTypes.value = currentCache.data
+      const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
+      console.log('使用缓存数据，缓存时间:', new Date(currentCache.timestamp).toLocaleTimeString())
+      ElMessage.success(`${modeText}模式加载了 ${relationshipTypes.value.length} 种关系类型 (缓存)`)
+      loadingTypes.value = false
+      return
+    }
+
     // 首先尝试使用新的标签映射API
     const mappingResponse = await apiService.getLabelMappings('relationship')
     const relationshipMappings = mappingResponse.relationship_labels || []
-    
+
     if (relationshipMappings.length > 0) {
       // 使用映射数据，但需要获取计数信息
       try {
-        const countResponse = await apiService.getRelationshipTypes()
+        const countResponse = await apiService.getRelationshipTypes(queryMode.value)
         const countMap = {}
         countResponse.relationship_types.forEach(item => {
           countMap[item.type] = item.count
         })
-        
+
         relationshipTypes.value = relationshipMappings.map(mapping => ({
           id: mapping.id,
           type: mapping.neo4j_name,
           display_name: mapping.display_name,
           count: countMap[mapping.neo4j_name] || 0,
           description: mapping.description
-        }))
-        
+        })).filter(item => item.count > 0) // 过滤掉count为0的关系类型
+
         // 同时加载每个关系类型的属性权限
         for (const mapping of relationshipMappings) {
           await loadPropertyPermissions(mapping.id)
@@ -886,7 +925,7 @@ const loadRelationshipTypes = async () => {
           count: 0,
           description: mapping.description
         }))
-        
+
         // 即使计数失败，也要加载属性权限
         for (const mapping of relationshipMappings) {
           await loadPropertyPermissions(mapping.id)
@@ -897,9 +936,18 @@ const loadRelationshipTypes = async () => {
       relationshipTypes.value = []
       ElMessage.info('您没有权限查看任何关系类型')
     }
-    
+
+    // 缓存数据
+    relationshipTypesCache.value[queryMode.value] = {
+      data: relationshipTypes.value,
+      timestamp: Date.now()
+    }
+
+    const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
+    console.log(`${queryMode.value}模式关系类型数据已缓存，数量:`, relationshipTypes.value.length, '缓存时间:', new Date().toLocaleTimeString())
+
     if (relationshipTypes.value.length > 0) {
-      ElMessage.success(`加载了 ${relationshipTypes.value.length} 种关系类型`)
+      ElMessage.success(`${modeText}模式加载了 ${relationshipTypes.value.length} 种关系类型`)
     }
   } catch (error) {
     console.error('加载关系类型失败:', error)
@@ -908,6 +956,31 @@ const loadRelationshipTypes = async () => {
   } finally {
     loadingTypes.value = false
   }
+}
+
+// 模式切换处理
+const onModeChange = () => {
+  clearResults()
+  selectedRelType.value = ''
+  console.log('模式切换到:', queryMode.value)
+  loadRelationshipTypes()
+}
+
+// 检查缓存是否有效
+const isCacheValid = () => {
+  const currentCache = relationshipTypesCache.value[queryMode.value]
+  if (!currentCache || !currentCache.data) return false
+
+  // 缓存过期时间：5分钟
+  const CACHE_EXPIRY = 5 * 60 * 1000
+  const now = Date.now()
+
+  if (currentCache.timestamp && (now - currentCache.timestamp) > CACHE_EXPIRY) {
+    console.log('缓存已过期，需要重新加载')
+    return false
+  }
+
+  return true
 }
 
 // 选择关系类型
@@ -948,38 +1021,69 @@ const queryRelationship = async () => {
 
   // 加载关系类型映射
   await loadRelationshipTypeMappings()
-  
+
   try {
     // 构建查询语句
-    let query = `MATCH (n)-[r:${selectedRelType.value}]->(m)`
-    
-    // 添加节点过滤条件
+    let query = ''
     const whereConditions = []
-    
-    if (startNodeFilter.value && startNodeFilter.value.trim()) {
-      // 检查起始节点的属性是否包含关键词
+
+    if (queryMode.value === 'new-standard') {
+      // 新标准模式：
+      // 起始节点必须与InternationalLevel有FROM_LEVEL关系
+      // 或者终止节点是InternationalLevel、CulturalStage、CulturalLevel1、CulturalLevel2、Radical
+      query = `MATCH (n)-[r:${selectedRelType.value}]->(m)`
+
       whereConditions.push(`(
-        (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR 
-        (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR 
-        (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
+        EXISTS((n)-[:FROM_LEVEL]->(:InternationalLevel))
+        OR m:InternationalLevel
+        OR m:CulturalStage
+        OR m:CulturalLevel1
+        OR m:CulturalLevel2
+        OR m:Radical
       )`)
+
+      if (startNodeFilter.value && startNodeFilter.value.trim()) {
+        whereConditions.push(`(
+          (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
+          (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
+          (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
+        )`)
+      }
+
+      if (endNodeFilter.value && endNodeFilter.value.trim()) {
+        whereConditions.push(`(
+          (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
+          (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
+          (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
+        )`)
+      }
+    } else {
+      // 通用模式
+      query = `MATCH (n)-[r:${selectedRelType.value}]->(m)`
+
+      if (startNodeFilter.value && startNodeFilter.value.trim()) {
+        whereConditions.push(`(
+          (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
+          (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
+          (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
+        )`)
+      }
+
+      if (endNodeFilter.value && endNodeFilter.value.trim()) {
+        whereConditions.push(`(
+          (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
+          (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
+          (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
+        )`)
+      }
     }
-    
-    if (endNodeFilter.value && endNodeFilter.value.trim()) {
-      // 检查终止节点的属性是否包含关键词
-      whereConditions.push(`(
-        (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR 
-        (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR 
-        (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
-      )`)
-    }
-    
+
     if (whereConditions.length > 0) {
       query += ` WHERE ` + whereConditions.join(' AND ')
     }
-    
+
     query += ` RETURN n, r, m LIMIT ${nodeLimit.value}`
-    
+
     // 准备参数
     const parameters = {}
     if (startNodeFilter.value && startNodeFilter.value.trim()) {
@@ -988,9 +1092,9 @@ const queryRelationship = async () => {
     if (endNodeFilter.value && endNodeFilter.value.trim()) {
       parameters.endFilter = endNodeFilter.value.trim()
     }
-    
+
     console.log('执行查询:', query, '参数:', parameters)
-    
+
     const response = await apiService.runQuery(query, parameters)
     
     console.log('查询响应:', response)
@@ -2282,6 +2386,40 @@ onMounted(() => {
 .types-header {
   margin-bottom: 24px;
   text-align: center;
+}
+
+/* 查询模式选择器 */
+.query-mode-selector {
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.mode-group :deep(.el-radio-button) {
+  margin: 0;
+}
+
+.mode-group :deep(.el-radio-button__inner) {
+  height: 44px;
+  line-height: 44px;
+  padding: 0 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+}
+
+.mode-group :deep(.el-radio-button__inner:hover) {
+  background: rgba(102, 126, 234, 0.1);
+}
+
+.mode-group :deep(.el-radio-button.is-active .el-radio-button__inner) {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: #667eea;
+  color: white;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
 .types-content {
