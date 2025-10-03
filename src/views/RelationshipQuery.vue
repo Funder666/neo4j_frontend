@@ -864,8 +864,8 @@ const endNodeOptions = ref([])    // 结束节点搜索结果
 const startNodeLoading = ref(false)
 const endNodeLoading = ref(false)
 
-// 关系类型缓存
-const relationshipTypesCache = ref({
+// 关系类型缓存 - 使用reactive而不是ref
+const relationshipTypesCache = reactive({
   general: {
     data: null,
     timestamp: null
@@ -880,16 +880,21 @@ const relationshipTypesCache = ref({
 const loadRelationshipTypes = async () => {
   loadingTypes.value = true
   try {
+    console.log('loadRelationshipTypes 调用，当前模式:', queryMode.value)
+
     // 检查缓存
     if (isCacheValid()) {
-      const currentCache = relationshipTypesCache.value[queryMode.value]
-      relationshipTypes.value = currentCache.data
+      const currentCache = relationshipTypesCache[queryMode.value]
+      relationshipTypes.value = JSON.parse(JSON.stringify(currentCache.data)) // 深拷贝
       const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
-      console.log('使用缓存数据，缓存时间:', new Date(currentCache.timestamp).toLocaleTimeString())
+      console.log('使用缓存数据，模式:', queryMode.value, '数量:', relationshipTypes.value.length)
+      console.log('缓存数据详情:', relationshipTypes.value.map(t => ({ type: t.type, count: t.count })))
       ElMessage.success(`${modeText}模式加载了 ${relationshipTypes.value.length} 种关系类型 (缓存)`)
       loadingTypes.value = false
       return
     }
+
+    console.log('缓存无效，从API加载数据，模式:', queryMode.value)
 
     // 首先尝试使用新的标签映射API
     const mappingResponse = await apiService.getLabelMappings('relationship')
@@ -899,6 +904,7 @@ const loadRelationshipTypes = async () => {
       // 使用映射数据，但需要获取计数信息
       try {
         const countResponse = await apiService.getRelationshipTypes(queryMode.value)
+        console.log('API返回的关系类型数据，模式:', queryMode.value, '数据:', countResponse)
         const countMap = {}
         countResponse.relationship_types.forEach(item => {
           countMap[item.type] = item.count
@@ -911,6 +917,9 @@ const loadRelationshipTypes = async () => {
           count: countMap[mapping.neo4j_name] || 0,
           description: mapping.description
         })).filter(item => item.count > 0) // 过滤掉count为0的关系类型
+
+        console.log('处理后的关系类型，模式:', queryMode.value, '数量:', relationshipTypes.value.length)
+        console.log('处理后详情:', relationshipTypes.value.map(t => ({ type: t.type, count: t.count })))
 
         // 同时加载每个关系类型的属性权限
         for (const mapping of relationshipMappings) {
@@ -938,13 +947,14 @@ const loadRelationshipTypes = async () => {
     }
 
     // 缓存数据
-    relationshipTypesCache.value[queryMode.value] = {
-      data: relationshipTypes.value,
+    relationshipTypesCache[queryMode.value] = {
+      data: JSON.parse(JSON.stringify(relationshipTypes.value)), // 深拷贝
       timestamp: Date.now()
     }
 
     const modeText = queryMode.value === 'new-standard' ? '新标准' : '通用'
     console.log(`${queryMode.value}模式关系类型数据已缓存，数量:`, relationshipTypes.value.length, '缓存时间:', new Date().toLocaleTimeString())
+    console.log('缓存内容:', relationshipTypesCache)
 
     if (relationshipTypes.value.length > 0) {
       ElMessage.success(`${modeText}模式加载了 ${relationshipTypes.value.length} 种关系类型`)
@@ -968,8 +978,13 @@ const onModeChange = () => {
 
 // 检查缓存是否有效
 const isCacheValid = () => {
-  const currentCache = relationshipTypesCache.value[queryMode.value]
-  if (!currentCache || !currentCache.data) return false
+  const currentCache = relationshipTypesCache[queryMode.value]
+  console.log('检查缓存有效性，模式:', queryMode.value, '缓存数据:', currentCache)
+
+  if (!currentCache || !currentCache.data) {
+    console.log('缓存不存在')
+    return false
+  }
 
   // 缓存过期时间：5分钟
   const CACHE_EXPIRY = 5 * 60 * 1000
@@ -980,6 +995,7 @@ const isCacheValid = () => {
     return false
   }
 
+  console.log('缓存有效')
   return true
 }
 
@@ -1028,18 +1044,18 @@ const queryRelationship = async () => {
     const whereConditions = []
 
     if (queryMode.value === 'new-standard') {
-      // 新标准模式：
+      // 新标准模式:
       // 起始节点必须与InternationalLevel有FROM_LEVEL关系
-      // 或者终止节点是InternationalLevel、CulturalStage、CulturalLevel1、CulturalLevel2、Radical
+      // 并且终止节点要么与InternationalLevel有FROM_LEVEL关系,要么是特定等级节点
       query = `MATCH (n)-[r:${selectedRelType.value}]->(m)`
 
+      whereConditions.push(`EXISTS((n)-[:FROM_LEVEL]->(:InternationalLevel))`)
       whereConditions.push(`(
-        EXISTS((n)-[:FROM_LEVEL]->(:InternationalLevel))
+        EXISTS((m)-[:FROM_LEVEL]->(:InternationalLevel))
         OR m:InternationalLevel
         OR m:CulturalStage
         OR m:CulturalLevel1
         OR m:CulturalLevel2
-        OR m:Radical
       )`)
 
       if (startNodeFilter.value && startNodeFilter.value.trim()) {
