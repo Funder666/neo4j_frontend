@@ -152,8 +152,9 @@ class ApiService {
     return this.get('/labels')
   }
 
-  async getRelationshipTypes() {
-    return this.get('/relationship-types')
+  async getRelationshipTypes(mode = null) {
+    const params = mode ? { mode } : {}
+    return this.get('/relationship-types', params)
   }
 
   async getNodeTypes(mode = null) {
