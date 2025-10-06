@@ -29,11 +29,11 @@
               <el-icon><Share /></el-icon>
               关系类型
             </h3>
-            <p class="section-subtitle">选择查询模式并点击关系类型查看相关连接</p>
+            <p class="section-subtitle">{{ isGuest ? '新标准等级下的关系类型' : '选择查询模式并点击关系类型查看相关连接' }}</p>
           </div>
 
-          <!-- 查询模式选择 -->
-          <div class="query-mode-selector">
+          <!-- 查询模式选择 - guest用户不显示 -->
+          <div v-if="!isGuest" class="query-mode-selector">
             <el-radio-group v-model="queryMode" @change="onModeChange" class="mode-group">
               <el-radio-button label="general">
                 <el-icon><Share /></el-icon>
@@ -802,6 +802,7 @@ const queryMode = ref('general')
 // 权限控制
 const currentUser = computed(() => authService.getCurrentUser())
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
+const isGuest = computed(() => currentUser.value?.username === 'guest')
 
 // 计算选中关系类型的显示名称
 const selectedRelTypeDisplayName = computed(() => {
@@ -1059,38 +1060,78 @@ const queryRelationship = async () => {
       )`)
 
       if (startNodeFilter.value && startNodeFilter.value.trim()) {
-        whereConditions.push(`(
-          (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
-          (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
-          (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
-        )`)
+        // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
+        if (selectedRelType.value === 'HAS_PINYIN') {
+          whereConditions.push(`(
+            (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
+            (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
+            (n.title IS NOT NULL AND n.title CONTAINS $startFilter) OR
+            (n.normal_pinyin IS NOT NULL AND n.normal_pinyin CONTAINS $startFilter)
+          )`)
+        } else {
+          whereConditions.push(`(
+            (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
+            (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
+            (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
+          )`)
+        }
       }
 
       if (endNodeFilter.value && endNodeFilter.value.trim()) {
-        whereConditions.push(`(
-          (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
-          (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
-          (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
-        )`)
+        // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
+        if (selectedRelType.value === 'HAS_PINYIN') {
+          whereConditions.push(`(
+            (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
+            (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
+            (m.title IS NOT NULL AND m.title CONTAINS $endFilter) OR
+            (m.normal_pinyin IS NOT NULL AND m.normal_pinyin CONTAINS $endFilter)
+          )`)
+        } else {
+          whereConditions.push(`(
+            (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
+            (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
+            (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
+          )`)
+        }
       }
     } else {
       // 通用模式
       query = `MATCH (n)-[r:${selectedRelType.value}]->(m)`
 
       if (startNodeFilter.value && startNodeFilter.value.trim()) {
-        whereConditions.push(`(
-          (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
-          (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
-          (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
-        )`)
+        // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
+        if (selectedRelType.value === 'HAS_PINYIN') {
+          whereConditions.push(`(
+            (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
+            (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
+            (n.title IS NOT NULL AND n.title CONTAINS $startFilter) OR
+            (n.normal_pinyin IS NOT NULL AND n.normal_pinyin CONTAINS $startFilter)
+          )`)
+        } else {
+          whereConditions.push(`(
+            (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
+            (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
+            (n.title IS NOT NULL AND n.title CONTAINS $startFilter)
+          )`)
+        }
       }
 
       if (endNodeFilter.value && endNodeFilter.value.trim()) {
-        whereConditions.push(`(
-          (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
-          (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
-          (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
-        )`)
+        // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
+        if (selectedRelType.value === 'HAS_PINYIN') {
+          whereConditions.push(`(
+            (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
+            (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
+            (m.title IS NOT NULL AND m.title CONTAINS $endFilter) OR
+            (m.normal_pinyin IS NOT NULL AND m.normal_pinyin CONTAINS $endFilter)
+          )`)
+        } else {
+          whereConditions.push(`(
+            (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
+            (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
+            (m.title IS NOT NULL AND m.title CONTAINS $endFilter)
+          )`)
+        }
       }
     }
 
@@ -2365,6 +2406,11 @@ const getSearchHint = () => {
 }
 
 onMounted(() => {
+  // 如果是guest用户，强制使用新标准模式
+  if (isGuest.value) {
+    queryMode.value = 'new-standard'
+  }
+
   // 初始化时加载关系类型和可用标签
   loadRelationshipTypes()
   loadAvailableLabels()
