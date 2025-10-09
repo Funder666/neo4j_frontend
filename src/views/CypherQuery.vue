@@ -1775,7 +1775,7 @@ ${JSON.stringify(schema, null, 2)}
 
 重要规则：
 1. 只返回纯净的Cypher查询语句，不要包含任何解释或markdown格式
-2. 查询结果数量不作限制
+2. 所有查询必须包含LIMIT 100，限制结果数量为100，避免性能问题
 3. 理解用户的中文描述但必须使用neo4j_name生成查询（如：用户说"汉字"要理解为Character标签）
 4. 对于模糊匹配，使用CONTAINS或正则表达式
 5. 确保查询语法正确且能在Neo4j中执行
@@ -1788,19 +1788,23 @@ ${JSON.stringify(schema, null, 2)}
 正确示例：
 用户问题："查找所有HSK等级为1的汉字"
 理解：用户说的"汉字"对应Character标签
-Cypher: MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n
+Cypher: MATCH (n:Character) WHERE n.hskLevel = '1' RETURN n LIMIT 100
 
-用户问题："找到笔画数少于5的汉字"  
+用户问题："找到笔画数少于5的汉字"
 理解：查询Character标签，使用数字比较
-Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n
+Cypher: MATCH (n:Character) WHERE toInteger(n.strokes) < 5 RETURN n LIMIT 100
+
+用户问题："查找所有汉字节点和关系"
+理解：这是一个广范围查询，必须限制数量
+Cypher: MATCH (n:Character) RETURN n LIMIT 100
 
 用户问题："查找'喜爱'词汇的近义词关系"
 理解：近义词关系对应NEAR_SYNONYMOUS_WITH
-Cypher: MATCH (n:Word {name: '喜爱'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m
+Cypher: MATCH (n:Word {name: '喜爱'})-[r:NEAR_SYNONYMOUS_WITH]-(m) RETURN n, r, m LIMIT 100
 
 用户问题："国际中文教育中文水平1级的词语"
 理解：国际中文教育等级通过关系连接，等级节点的value为1，要词语和等级的关系！
-Cypher: MATCH (n:Word)-[r:FROM_LEVEL]->(l:InternationalLevel {value: '1'}) RETURN n, r, l limit 100`
+Cypher: MATCH (n:Word)-[r:FROM_LEVEL]->(l:InternationalLevel {value: '1'}) RETURN n, r, l LIMIT 100`
 
   try {
     const response = await fetch(API_URL, {
