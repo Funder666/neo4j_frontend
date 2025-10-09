@@ -309,12 +309,43 @@
                   >
                     <div class="property-name">{{ getPropertyDisplayName(key, selectedNode.labels) }}</div>
                     <div class="property-val">
-                      <a v-if="isUrl(formatProperty(value))" 
-                         :href="formatProperty(value)" 
-                         target="_blank" 
+                      <!-- 检测是否为多链接拼接 -->
+                      <template v-if="isUrl(formatProperty(value)) && formatProperty(value).includes('___')">
+                        <div class="multiple-links">
+                          <div
+                            v-for="(url, index) in formatProperty(value).split('___')"
+                            :key="index"
+                            class="link-item"
+                          >
+                            <a
+                              :href="url.trim()"
+                              target="_blank"
+                              class="property-url individual-link"
+                              :title="url.trim()"
+                            >
+                              <el-icon class="link-icon"><Picture /></el-icon>
+                              图片 {{ index + 1 }}
+                            </a>
+                            <el-button
+                              type="text"
+                              size="small"
+                              @click="copyUrl(url.trim())"
+                              class="copy-btn"
+                              title="复制链接"
+                            >
+                              <el-icon><CopyDocument /></el-icon>
+                            </el-button>
+                          </div>
+                        </div>
+                      </template>
+                      <!-- 单链接处理 -->
+                      <a v-else-if="isUrl(formatProperty(value))"
+                         :href="formatProperty(value)"
+                         target="_blank"
                          class="property-url">
                         {{ formatProperty(value) }}
                       </a>
+                      <!-- 普通文本 -->
                       <span v-else>{{ formatProperty(value) }}</span>
                     </div>
                   </div>
@@ -443,7 +474,9 @@ import {
   Loading,
   Star,
   Warning,
-  ArrowLeft
+  ArrowLeft,
+  Picture,
+  CopyDocument
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -1476,6 +1509,27 @@ const formatProperty = (value) => {
     return JSON.stringify(value)
   }
   return String(value)
+}
+
+// 复制URL到剪贴板
+const copyUrl = async (url) => {
+  try {
+    await navigator.clipboard.writeText(url)
+    ElMessage.success('链接已复制到剪贴板')
+  } catch (error) {
+    // 降级方案：使用传统方法
+    try {
+      const textArea = document.createElement('textarea')
+      textArea.value = url
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      ElMessage.success('链接已复制到剪贴板')
+    } catch (fallbackError) {
+      ElMessage.error('复制失败，请手动复制链接')
+    }
+  }
 }
 
 const isUrl = (str) => {
@@ -2722,6 +2776,63 @@ onMounted(() => {
 .property-url:hover {
   color: #764ba2;
   text-decoration: underline;
+}
+
+/* 多链接显示样式 */
+.multiple-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.link-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(102, 126, 234, 0.05);
+  border: 1px solid rgba(102, 126, 234, 0.2);
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.link-item:hover {
+  background: rgba(102, 126, 234, 0.1);
+  border-color: rgba(102, 126, 234, 0.3);
+}
+
+.individual-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  color: #667eea;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: color 0.3s ease;
+}
+
+.individual-link:hover {
+  color: #764ba2;
+  text-decoration: underline;
+}
+
+.link-icon {
+  font-size: 14px;
+  color: #667eea;
+}
+
+.copy-btn {
+  padding: 2px 4px;
+  min-height: 24px;
+  color: #7f8c8d;
+  font-size: 12px;
+}
+
+.copy-btn:hover {
+  color: #667eea;
+  background: rgba(102, 126, 234, 0.1);
 }
 
 /* 管理员操作按钮 */
