@@ -1063,10 +1063,10 @@ const queryRelationship = async () => {
         // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
         if (selectedRelType.value === 'HAS_PINYIN') {
           whereConditions.push(`(
-            (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
-            (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
-            (n.title IS NOT NULL AND n.title CONTAINS $startFilter) OR
-            (n.normal_pinyin IS NOT NULL AND n.normal_pinyin CONTAINS $startFilter)
+            (n.name IS NOT NULL AND n.name STARTS WITH $startFilter) OR
+            (n.value IS NOT NULL AND n.value STARTS WITH $startFilter) OR
+            (n.title IS NOT NULL AND n.title STARTS WITH $startFilter) OR
+            (n.normal_pinyin IS NOT NULL AND n.normal_pinyin STARTS WITH $startFilter)
           )`)
         } else {
           whereConditions.push(`(
@@ -1081,10 +1081,10 @@ const queryRelationship = async () => {
         // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
         if (selectedRelType.value === 'HAS_PINYIN') {
           whereConditions.push(`(
-            (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
-            (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
-            (m.title IS NOT NULL AND m.title CONTAINS $endFilter) OR
-            (m.normal_pinyin IS NOT NULL AND m.normal_pinyin CONTAINS $endFilter)
+            (m.name IS NOT NULL AND m.name STARTS WITH $endFilter) OR
+            (m.value IS NOT NULL AND m.value STARTS WITH $endFilter) OR
+            (m.title IS NOT NULL AND m.title STARTS WITH $endFilter) OR
+            (m.normal_pinyin IS NOT NULL AND m.normal_pinyin STARTS WITH $endFilter)
           )`)
         } else {
           whereConditions.push(`(
@@ -1102,10 +1102,10 @@ const queryRelationship = async () => {
         // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
         if (selectedRelType.value === 'HAS_PINYIN') {
           whereConditions.push(`(
-            (n.name IS NOT NULL AND n.name CONTAINS $startFilter) OR
-            (n.value IS NOT NULL AND n.value CONTAINS $startFilter) OR
-            (n.title IS NOT NULL AND n.title CONTAINS $startFilter) OR
-            (n.normal_pinyin IS NOT NULL AND n.normal_pinyin CONTAINS $startFilter)
+            (n.name IS NOT NULL AND n.name STARTS WITH $startFilter) OR
+            (n.value IS NOT NULL AND n.value STARTS WITH $startFilter) OR
+            (n.title IS NOT NULL AND n.title STARTS WITH $startFilter) OR
+            (n.normal_pinyin IS NOT NULL AND n.normal_pinyin STARTS WITH $startFilter)
           )`)
         } else {
           whereConditions.push(`(
@@ -1120,10 +1120,10 @@ const queryRelationship = async () => {
         // 如果是拼音相关关系,添加 normal_pinyin 字段搜索
         if (selectedRelType.value === 'HAS_PINYIN') {
           whereConditions.push(`(
-            (m.name IS NOT NULL AND m.name CONTAINS $endFilter) OR
-            (m.value IS NOT NULL AND m.value CONTAINS $endFilter) OR
-            (m.title IS NOT NULL AND m.title CONTAINS $endFilter) OR
-            (m.normal_pinyin IS NOT NULL AND m.normal_pinyin CONTAINS $endFilter)
+            (m.name IS NOT NULL AND m.name STARTS WITH $endFilter) OR
+            (m.value IS NOT NULL AND m.value STARTS WITH $endFilter) OR
+            (m.title IS NOT NULL AND m.title STARTS WITH $endFilter) OR
+            (m.normal_pinyin IS NOT NULL AND m.normal_pinyin STARTS WITH $endFilter)
           )`)
         } else {
           whereConditions.push(`(
@@ -2092,11 +2092,11 @@ const searchNodes = async (query) => {
     if (selectedRelType.value === 'HAS_PINYIN') {
       // 对于拼音关系，优先搜索Character节点
       searchQuery = `
-        MATCH (n) 
-        WHERE (n.name IS NOT NULL AND n.name CONTAINS $query) OR 
-              (n.value IS NOT NULL AND n.value CONTAINS $query) OR 
-              (n.title IS NOT NULL AND n.title CONTAINS $query) OR
-              toString(n.id) CONTAINS $query
+        MATCH (n)
+        WHERE (n.name IS NOT NULL AND n.name STARTS WITH $query) OR
+              (n.value IS NOT NULL AND n.value STARTS WITH $query) OR
+              (n.title IS NOT NULL AND n.title STARTS WITH $query) OR
+              toString(n.id) STARTS WITH $query
         RETURN n, 
         CASE 
           WHEN 'Character' IN labels(n) THEN 1
