@@ -14,84 +14,155 @@
       </div>
 
       <div class="query-section">
-        <div class="search-card">
-          <div class="search-header">
-            <h3>语料库搜索</h3>
-            <p>输入关键词搜索语料库内容</p>
+        <!-- 查询配置卡片 -->
+        <div class="config-card">
+          <div class="config-header">
+            <h3>查询配置</h3>
           </div>
 
-          <div class="search-form">
-            <div class="search-input-wrapper">
-              <el-input
-                v-model="searchQuery"
-                placeholder="请输入搜索关键词..."
+          <div class="config-form">
+            <el-form :model="queryConfig" label-width="120px">
+              <el-form-item label="查询关键词">
+                <el-input
+                  v-model="searchQuery"
+                  placeholder="请输入查询关键词..."
+                  size="large"
+                  @keyup.enter="handleSearch"
+                  :disabled="searching"
+                />
+              </el-form-item>
+
+              <el-row :gutter="20">
+                <el-col :span="12">
+                  <el-form-item label="查询类型">
+                    <el-select v-model="queryConfig.type" placeholder="选择查询类型" size="large">
+                      <el-option label="上下文检索" value="Context" />
+                      <el-option label="频次检索" value="Freq" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :span="12">
+                  <el-form-item label="返回数量">
+                    <el-input-number
+                      v-model="queryConfig.number"
+                      :min="1"
+                      :max="1000"
+                      size="large"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+
+              <el-form-item label="上下文窗口" v-if="queryConfig.type === 'Context'">
+                <el-input-number
+                  v-model="queryConfig.winSize"
+                  :min="1"
+                  :max="100"
+                  size="large"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-form>
+
+            <div class="search-actions">
+              <el-button
+                type="primary"
                 size="large"
-                class="search-input"
-                @keyup.enter="handleSearch"
+                @click="handleSearch"
                 :loading="searching"
+                :disabled="!searchQuery.trim()"
               >
-                <template #prepend>
-                  <el-icon><Search /></el-icon>
-                </template>
-                <template #append>
-                  <el-button
-                    type="primary"
-                    @click="handleSearch"
-                    :loading="searching"
-                    :disabled="!searchQuery.trim()"
-                  >
-                    搜索
-                  </el-button>
-                </template>
-              </el-input>
-            </div>
-          </div>
-
-          <!-- 搜索提示 -->
-          <div class="search-tips" v-if="!searchQuery.trim()">
-            <div class="tips-header">
-              <el-icon><InfoFilled /></el-icon>
-              搜索提示
-            </div>
-            <ul class="tips-list">
-              <li>支持中文关键词搜索</li>
-              <li>可以搜索文档内容、标题等信息</li>
-              <li>支持模糊匹配和精确匹配</li>
-            </ul>
-          </div>
-
-          <!-- 搜索历史 -->
-          <div class="search-history" v-if="searchHistory.length > 0">
-            <div class="history-header">
-              <span>最近搜索</span>
-              <el-button text size="small" @click="clearHistory">清空</el-button>
-            </div>
-            <div class="history-tags">
-              <el-tag
-                v-for="item in searchHistory.slice(0, 8)"
-                :key="item"
-                class="history-tag"
-                @click="searchQuery = item"
-                style="cursor: pointer"
-              >
-                {{ item }}
-              </el-tag>
+                <el-icon><Search /></el-icon>
+                开始查询
+              </el-button>
+              <el-button size="large" @click="resetForm">
+                <el-icon><Refresh /></el-icon>
+                重置
+              </el-button>
             </div>
           </div>
         </div>
 
-        <!-- 搜索结果占位区域 -->
-        <div class="results-placeholder" v-if="hasSearched && !searching">
-          <div class="placeholder-content">
-            <el-icon class="placeholder-icon"><FolderOpened /></el-icon>
-            <h4>搜索结果将在这里显示</h4>
-            <p>当前为演示页面，实际的语料库搜索结果将显示在此区域</p>
+        <!-- 搜索历史 -->
+        <div class="search-history" v-if="searchHistory.length > 0">
+          <div class="history-header">
+            <span>最近搜索</span>
+            <el-button text size="small" @click="clearHistory">清空</el-button>
+          </div>
+          <div class="history-tags">
+            <el-tag
+              v-for="item in searchHistory.slice(0, 8)"
+              :key="item"
+              class="history-tag"
+              @click="applyHistoryItem(item)"
+              style="cursor: pointer"
+            >
+              {{ item }}
+            </el-tag>
+          </div>
+        </div>
+
+        <!-- 查询结果 -->
+        <div class="results-section" v-if="hasSearched">
+          <!-- 频次结果 -->
+          <div v-if="queryResult && queryResult.Type === 'Freq'" class="freq-results">
+            <div class="results-header">
+              <h3>频次查询结果</h3>
+              <el-tag type="success">{{ queryResult.total }} 条记录</el-tag>
+            </div>
+
+            <div class="freq-content">
+              <div class="freq-section">
+                <h4>词频统计</h4>
+                <div class="freq-list">
+                  <div v-for="(freq, word) in queryResult.Freq" :key="word" class="freq-item">
+                    <span class="word">{{ word }}</span>
+                    <span class="frequency">{{ freq }} 次</span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="queryResult.Source" class="source-section">
+                <h4>来源分布</h4>
+                <div class="source-list">
+                  <div v-for="(sources, word) in queryResult.Source" :key="word" class="source-item">
+                    <div class="word-title">{{ word }}</div>
+                    <div class="source-detail">{{ sources }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 上下文结果 -->
+          <div v-else-if="queryResult && queryResult.Type === 'Context'" class="context-results">
+            <div class="results-header">
+              <h3>上下文查询结果</h3>
+              <el-tag type="success">{{ queryResult.total }} 条记录</el-tag>
+            </div>
+
+            <div class="context-list">
+              <div v-for="(item, index) in queryResult.Context" :key="index" class="context-item">
+                <div class="context-header">
+                  <el-tag type="info" size="small">{{ item.Source }}</el-tag>
+                  <span class="context-index">#{{ index + 1 }}</span>
+                </div>
+                <div class="context-content" v-html="highlightQuery(item.Context)"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 无结果 -->
+          <div v-else-if="queryResult && queryResult.total === 0" class="no-results">
+            <el-empty description="未找到匹配的语料库内容" />
           </div>
         </div>
 
         <!-- 加载状态 -->
         <div class="loading-state" v-if="searching">
           <el-skeleton :rows="5" animated />
+          <p class="loading-text">正在查询语料库...</p>
         </div>
       </div>
     </div>
@@ -101,14 +172,25 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Document, Search, InfoFilled, FolderOpened } from '@element-plus/icons-vue'
+import { Document, Search, Refresh } from '@element-plus/icons-vue'
 import AppLayout from '../components/AppLayout.vue'
+
+// 语料库API地址 - 根据实际部署情况修改
+const CORPUS_API_URL = 'https://corpus.chineseplus.net/api/v1/search/edu'
 
 // 响应式数据
 const searchQuery = ref('')
 const searching = ref(false)
 const hasSearched = ref(false)
 const searchHistory = ref([])
+const queryResult = ref(null)
+
+// 查询配置
+const queryConfig = ref({
+  type: 'Context', // 'Context' 或 'Freq'
+  number: 100,     // 返回数量
+  winSize: 20      // 上下文窗口大小
+})
 
 // 生命周期
 onMounted(() => {
@@ -118,45 +200,116 @@ onMounted(() => {
 // 搜索处理
 const handleSearch = async () => {
   if (!searchQuery.value.trim()) {
-    ElMessage.warning('请输入搜索关键词')
+    ElMessage.warning('请输入查询关键词')
     return
   }
 
   searching.value = true
   hasSearched.value = true
+  queryResult.value = null
 
   try {
-    // 模拟搜索延迟
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    // 构建查询字符串
+    const queryStr = buildQueryString(searchQuery.value.trim(), queryConfig.value)
 
     // 添加到搜索历史
     addToHistory(searchQuery.value.trim())
 
-    // TODO: 实际的跳转逻辑，目标页面还未确定
-    // 当前先记录搜索关键词并显示提示
-    const keyword = searchQuery.value.trim()
-    console.log('将要搜索的关键词:', keyword)
+    // 调用语料库API
+    const result = await queryCorpus(queryStr)
 
-    ElMessage.info(`搜索关键词：${keyword}，将跳转到语料库页面（开发中）`)
+    if (result && result.data) {
+      queryResult.value = result.data
 
-    // 未来的跳转逻辑示例:
-    // window.location.href = `https://corpus-site.com/search?q=${encodeURIComponent(keyword)}`
-    // 或者使用 router 跳转到其他内部页面
-    // router.push({ name: 'CorpusResults', query: { q: keyword } })
+      if (result.data.total > 0) {
+        ElMessage.success(`查询成功，共找到 ${result.data.total} 条记录`)
+      } else {
+        ElMessage.info('未找到匹配的语料库内容')
+      }
+    } else {
+      throw new Error('查询结果为空')
+    }
 
   } catch (error) {
-    console.error('搜索失败:', error)
-    ElMessage.error('搜索失败，请稍后重试')
+    console.error('语料库查询失败:', error)
+    ElMessage.error(`查询失败: ${error.message || '请稍后重试'}`)
+    queryResult.value = { total: 0 }
   } finally {
     searching.value = false
   }
+}
+
+// 构建查询字符串
+const buildQueryString = (keyword, config) => {
+  let query = `${keyword}{}${config.type}(${config.number}`
+
+  if (config.type === 'Context') {
+    query += `,${config.winSize}`
+  }
+
+  query += ')'
+  return query
+}
+
+// 调用语料库API
+const queryCorpus = async (query) => {
+  const response = await fetch(CORPUS_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=UTF-8',
+    },
+    body: JSON.stringify({ query })
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+
+  const data = await response.json()
+
+  if (!data.success && data.message) {
+    throw new Error(data.message)
+  }
+
+  return data
+}
+
+// 高亮查询关键词
+const highlightQuery = (text) => {
+  if (!searchQuery.value.trim()) return text
+
+  const keyword = searchQuery.value.trim()
+  const regex = new RegExp(`(<Q>)?(${keyword})(</Q>)?`, 'gi')
+  return text.replace(regex, '<mark>$2</mark>')
+}
+
+// 应用历史记录
+const applyHistoryItem = (item) => {
+  searchQuery.value = item
+  handleSearch()
+}
+
+// 重置表单
+const resetForm = () => {
+  searchQuery.value = ''
+  queryConfig.value = {
+    type: 'Context',
+    number: 100,
+    winSize: 20
+  }
+  hasSearched.value = false
+  queryResult.value = null
 }
 
 // 搜索历史管理
 const loadSearchHistory = () => {
   const history = localStorage.getItem('corpus_search_history')
   if (history) {
-    searchHistory.value = JSON.parse(history)
+    try {
+      searchHistory.value = JSON.parse(history)
+    } catch (e) {
+      searchHistory.value = []
+    }
   }
 }
 
@@ -217,11 +370,12 @@ const clearHistory = () => {
 }
 
 .query-section {
-  max-width: 800px;
+  max-width: 1000px;
   margin: 0 auto;
 }
 
-.search-card {
+/* 配置卡片 */
+.config-card {
   background: white;
   border-radius: 12px;
   padding: 32px;
@@ -229,74 +383,37 @@ const clearHistory = () => {
   margin-bottom: 24px;
 }
 
-.search-header {
+.config-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
-.search-header h3 {
+.config-header h3 {
   font-size: 24px;
   font-weight: 600;
   color: #1f2937;
-  margin: 0 0 8px 0;
-}
-
-.search-header p {
-  color: #6b7280;
-  font-size: 16px;
   margin: 0;
 }
 
-.search-form {
-  margin-bottom: 32px;
+.config-form {
+  margin-bottom: 24px;
 }
 
-.search-input-wrapper {
+.search-actions {
   display: flex;
   justify-content: center;
-}
-
-.search-input {
-  width: 100%;
-  max-width: 600px;
-}
-
-.search-input :deep(.el-input__inner) {
-  font-size: 16px;
-  padding: 16px 20px;
-}
-
-.search-tips {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 20px;
-  margin-top: 24px;
-}
-
-.tips-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  color: #3b82f6;
-  margin-bottom: 12px;
-}
-
-.tips-list {
-  margin: 0;
-  padding-left: 20px;
-  color: #6b7280;
-}
-
-.tips-list li {
-  margin-bottom: 6px;
-}
-
-.search-history {
+  gap: 16px;
+  padding-top: 16px;
   border-top: 1px solid #e2e8f0;
-  padding-top: 20px;
-  margin-top: 24px;
+}
+
+/* 搜索历史 */
+.search-history {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 24px;
 }
 
 .history-header {
@@ -323,42 +440,172 @@ const clearHistory = () => {
   color: white;
 }
 
-.results-placeholder {
+/* 查询结果 */
+.results-section {
   background: white;
   border-radius: 12px;
-  padding: 60px 32px;
-  text-align: center;
+  padding: 32px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  margin-bottom: 24px;
 }
 
-.placeholder-content {
-  max-width: 400px;
-  margin: 0 auto;
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-.placeholder-icon {
-  font-size: 64px;
-  color: #d1d5db;
-  margin-bottom: 16px;
-}
-
-.placeholder-content h4 {
+.results-header h3 {
   font-size: 20px;
+  font-weight: 600;
   color: #1f2937;
-  margin: 0 0 12px 0;
-}
-
-.placeholder-content p {
-  color: #6b7280;
-  font-size: 14px;
   margin: 0;
-  line-height: 1.5;
 }
 
+/* 频次结果样式 */
+.freq-results {
+  width: 100%;
+}
+
+.freq-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 768px) {
+  .freq-content {
+    grid-template-columns: 1fr;
+  }
+}
+
+.freq-section, .source-section {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.freq-section h4, .source-section h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 16px 0;
+}
+
+.freq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.freq-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: white;
+  border-radius: 6px;
+  border-left: 3px solid #3b82f6;
+}
+
+.freq-item .word {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.freq-item .frequency {
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.source-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.source-item {
+  background: white;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.source-item .word-title {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.source-item .source-detail {
+  font-size: 14px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+/* 上下文结果样式 */
+.context-results {
+  width: 100%;
+}
+
+.context-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.context-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.context-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.context-index {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.context-content {
+  line-height: 1.6;
+  color: #1f2937;
+}
+
+.context-content :deep(mark) {
+  background-color: #fef08a;
+  color: #1f2937;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+
+/* 无结果 */
+.no-results {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+/* 加载状态 */
 .loading-state {
   background: white;
   border-radius: 12px;
   padding: 32px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  text-align: center;
+}
+
+.loading-text {
+  margin-top: 16px;
+  color: #6b7280;
+  font-size: 16px;
 }
 </style>
