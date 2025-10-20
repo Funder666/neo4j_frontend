@@ -1,6 +1,6 @@
 // API服务 - 调用后端REST API
-const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
-// const API_BASE_URL = 'http://localhost:8000/api'
+// const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
+const API_BASE_URL = 'http://localhost:8001/api'
 
 class ApiService {
   constructor() {
@@ -26,7 +26,18 @@ class ApiService {
     }
 
     try {
-      const response = await fetch(url, config)
+      // 创建AbortController用于超时控制
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, 15000) // 15秒超时，比后端的10秒稍长
+
+      const response = await fetch(url, {
+        ...config,
+        signal: controller.signal
+      })
+
+      clearTimeout(timeoutId)
       
       if (!response.ok) {
         // 如果是认证失败，清除本地存储并跳转到登录页
@@ -44,6 +55,12 @@ class ApiService {
       return await response.json()
     } catch (error) {
       console.error(`API请求失败 [${endpoint}]:`, error)
+
+      // 处理超时错误
+      if (error.name === 'AbortError') {
+        throw new Error('请求超时，请检查查询条件是否过于复杂或添加LIMIT限制')
+      }
+
       throw error
     }
   }
