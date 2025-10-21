@@ -1,6 +1,6 @@
 // API服务 - 调用后端REST API
 // const API_BASE_URL = 'https://chineseedu.shuishan.net.cn:8000/api'
-const API_BASE_URL = 'http://localhost:8001/api'
+const API_BASE_URL = 'http://43.143.162.234:80/api'
 
 class ApiService {
   constructor() {
