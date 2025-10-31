@@ -9,8 +9,8 @@
         <el-icon><HomeFilled /></el-icon>
         返回首页
       </el-button>
-      <el-button 
-        type="primary" 
+      <el-button
+        type="primary"
         class="action-btn"
         @click="clearResults"
         :disabled="loading"
@@ -47,7 +47,7 @@
               </el-radio-group>
             </div>
 
-            <!-- 快捷查询模板 - 只在Cypher查询模式下显示 -->
+            <!-- 常用查询模板 - 只在Cypher查询模式下显示 -->
             <div v-if="queryMode === 'cypher'" class="query-templates">
               <div class="template-header">
                 <div class="param-label">
@@ -57,13 +57,88 @@
               </div>
               <div class="templates-grid">
                 <div 
-                  v-for="template in queryTemplates"
+                  v-for="(template, index) in defaultQueryTemplates"
                   :key="template.name"
                   class="template-card"
-                  @click="selectTemplate(template)"
+                  @click.self="selectTemplate(template)"
                 >
-                  <div class="template-name">{{ template.name }}</div>
-                  <div class="template-description">{{ template.description }}</div>
+                  <div class="template-content" @click="selectTemplate(template)">
+                    <div class="template-name">{{ template.name }}</div>
+                    <div class="template-description">{{ template.description }}</div>
+                  </div>
+                  <div class="template-actions">
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click.stop="openTemplateDialog('edit', template, index, true)"
+                      class="edit-template-btn"
+                    >
+                      <el-icon><EditPen /></el-icon>
+                    </el-button>
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click.stop="deleteTemplate(index, true)"
+                      class="delete-template-btn"
+                    >
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 自定义查询模板 - 只在Cypher查询模式下显示 -->
+            <div v-if="queryMode === 'cypher'" class="query-templates">
+              <div class="template-header">
+                <div class="param-label">
+                  <el-icon><Star /></el-icon>
+                  自定义查询模板
+                </div>
+                <el-button 
+                  type="primary" 
+                  size="small"
+                  @click="openTemplateDialog('create')"
+                  class="add-template-btn"
+                >
+                  <el-icon><Plus /></el-icon>
+                  新建模板
+                </el-button>
+              </div>
+              <!-- 空状态提示 -->
+              <div v-if="customTemplates.length === 0" class="empty-template-hint">
+                暂无自定义模板
+              </div>
+              <!-- 只在有自定义模板时显示网格 -->
+              <div v-if="customTemplates.length > 0" class="templates-grid">
+                <div 
+                  v-for="(template, index) in customTemplates"
+                  :key="template.name"
+                  class="template-card"
+                  @click.self="selectTemplate(template)"
+                >
+                  <div class="template-content" @click="selectTemplate(template)">
+                    <div class="template-name">{{ template.name }}</div>
+                    <div class="template-description">{{ template.description }}</div>
+                  </div>
+                  <div class="template-actions">
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click.stop="openTemplateDialog('edit', template, index, false)"
+                      class="edit-template-btn"
+                    >
+                      <el-icon><EditPen /></el-icon>
+                    </el-button>
+                    <el-button 
+                      type="text" 
+                      size="small"
+                      @click.stop="deleteTemplate(index, false)"
+                      class="delete-template-btn"
+                    >
+                      <el-icon><Delete /></el-icon>
+                    </el-button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -484,6 +559,49 @@
         </div>
       </div>
     </div>
+
+    <!-- 模板编辑对话框 -->
+    <el-dialog
+      v-model="templateDialog.visible"
+      :title="templateDialog.mode === 'create' ? '新建查询模板' : '编辑查询模板'"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <el-form :model="templateDialog.form" label-width="100px">
+        <el-form-item label="模板名称" required>
+          <el-input
+            v-model="templateDialog.form.name"
+            placeholder="请输入模板名称"
+            maxlength="50"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="模板描述" required>
+          <el-input
+            v-model="templateDialog.form.description"
+            placeholder="请输入模板描述"
+            maxlength="100"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="查询语句" required>
+          <el-input
+            v-model="templateDialog.form.query"
+            type="textarea"
+            :rows="8"
+            placeholder="请输入Cypher查询语句"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="templateDialog.visible = false">取消</el-button>
+          <el-button type="primary" @click="saveTemplate">
+            {{ templateDialog.mode === 'create' ? '创建' : '保存' }}
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
   </AppLayout>
 </template>
 
@@ -508,7 +626,9 @@ import {
   MagicStick,
   View,
   Select,
-  Warning
+  Warning,
+  Plus,
+  Star
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -535,6 +655,19 @@ const generatedCypher = ref('') // 生成的Cypher查询
 const generatingQuery = ref(false) // 生成查询中
 const satisfactionRating = ref(null) // 满意度评价: 'satisfied' | 'unsatisfied' | null
 
+// 模板管理对话框
+const templateDialog = ref({
+  visible: false,        // 对话框显示状态
+  mode: 'create',       // 模式：'create' | 'edit'
+  editIndex: -1,         // 编辑时的索引
+  isDefault: false,     // 是否编辑默认模板
+  form: {
+    name: '',           // 模板名称
+    description: '',    // 模板描述
+    query: ''           // Cypher查询语句
+  }
+})
+
 // 权限和标签映射相关
 const availableLabels = ref([])
 const propertyPermissions = ref({})
@@ -559,39 +692,79 @@ const nodeDialog = ref({
 const currentUser = computed(() => authService.getCurrentUser())
 const isAdmin = computed(() => currentUser.value?.role === 'admin')
 
-// 查询模板
-const queryTemplates = ref([
+// 初始默认模板配置
+const initialDefaultTemplates = [
   {
     name: '获取所有节点',
     description: '返回前10个节点',
-    query: 'MATCH (n) RETURN n LIMIT 10'
+    query: 'MATCH (n) RETURN n LIMIT 10',
+    isDefault: true
   },
   {
     name: '获取所有关系',
     description: '返回前10个节点关系',
-    query: 'MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 10'
+    query: 'MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 10',
+    isDefault: true
   },
   {
     name: '按标签查询',
     description: '查询指定标签的节点',
-    query: 'MATCH (n:Character) RETURN n LIMIT 10'
+    query: 'MATCH (n:Character) RETURN n LIMIT 10',
+    isDefault: true
   },
   {
     name: '路径查询',
     description: '查找两个节点间的路径',
-    query: 'MATCH path = (n)-[*1..3]-(m) RETURN path LIMIT 5'
+    query: 'MATCH path = (n)-[*1..3]-(m) RETURN path LIMIT 5',
+    isDefault: true
   },
   {
     name: '统计查询',
     description: '统计各类型节点数量',
-    query: 'MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC'
+    query: 'MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC',
+    isDefault: true
   },
   {
     name: '关系统计',
     description: '统计各类型关系数量',
-    query: 'MATCH ()-[r]->() RETURN type(r) as type, count(r) as count ORDER BY count DESC'
+    query: 'MATCH ()-[r]->() RETURN type(r) as type, count(r) as count ORDER BY count DESC',
+    isDefault: true
   }
-])
+]
+
+// 从 localStorage 加载默认模板
+const loadDefaultTemplates = () => {
+  try {
+    const saved = localStorage.getItem('defaultCypherQueryTemplates')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : initialDefaultTemplates
+    }
+  } catch (error) {
+    console.error('加载默认查询模板失败:', error)
+  }
+  return initialDefaultTemplates
+}
+
+// 默认查询模板（可编辑和删除）
+const defaultQueryTemplates = loadDefaultTemplates()
+
+// 从 localStorage 加载自定义模板
+const loadCustomTemplates = () => {
+  try {
+    const saved = localStorage.getItem('customCypherQueryTemplates')
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      return Array.isArray(parsed) ? parsed : []
+    }
+  } catch (error) {
+    console.error('加载自定义查询模板失败:', error)
+  }
+  return []
+}
+
+// 自定义模板（用户创建的模板）
+const customTemplates = ref(loadCustomTemplates())
 
 // 计算属性
 const tableColumns = computed(() => {
@@ -624,6 +797,157 @@ const clearResults = () => {
 const selectTemplate = (template) => {
   cypherQuery.value = template.query
   ElMessage.success(`已选择模板: ${template.name}`)
+}
+
+// 保存默认模板到 localStorage
+const saveDefaultTemplatesToStorage = () => {
+  try {
+    localStorage.setItem('defaultCypherQueryTemplates', JSON.stringify(defaultQueryTemplates))
+  } catch (error) {
+    console.error('保存默认查询模板失败:', error)
+    ElMessage.error('保存模板失败')
+  }
+}
+
+// 保存自定义模板到 localStorage
+const saveCustomTemplatesToStorage = () => {
+  try {
+    localStorage.setItem('customCypherQueryTemplates', JSON.stringify(customTemplates.value))
+  } catch (error) {
+    console.error('保存自定义查询模板失败:', error)
+    ElMessage.error('保存模板失败')
+  }
+}
+
+// 打开模板对话框的方法，区分创建和编辑模式
+const openTemplateDialog = (mode, template = null, index = -1, isDefault = false) => {
+  templateDialog.value.mode = mode
+  templateDialog.value.editIndex = index
+  templateDialog.value.isDefault = isDefault
+  
+  if (mode === 'edit' && template) {
+    templateDialog.value.form = {
+      name: template.name,
+      description: template.description,
+      query: template.query
+    }
+  } else {
+    templateDialog.value.form = {
+      name: '',
+      description: '',
+      query: ''
+    }
+  }
+  
+  templateDialog.value.visible = true
+}
+
+// 保存模板
+const saveTemplate = () => {
+  const { name, description, query } = templateDialog.value.form
+  
+  // 验证输入
+  if (!name.trim()) {
+    ElMessage.warning('请输入模板名称')
+    return
+  }
+  if (!description.trim()) {
+    ElMessage.warning('请输入模板描述')
+    return
+  }
+  if (!query.trim()) {
+    ElMessage.warning('请输入查询语句')
+    return
+  }
+  
+  const newTemplate = {
+    name: name.trim(),
+    description: description.trim(),
+    query: query.trim()
+  }
+  
+  const isDefault = templateDialog.value.isDefault
+  const targetTemplates = isDefault ? defaultQueryTemplates : customTemplates.value
+  
+  if (templateDialog.value.mode === 'create') {
+    // 创建模式：检查是否已存在同名模板（在所有模板中检查）
+    const existsInDefault = defaultQueryTemplates.some(t => t.name === newTemplate.name)
+    const existsInCustom = customTemplates.value.some(t => t.name === newTemplate.name)
+    
+    if (existsInDefault || existsInCustom) {
+      ElMessage.warning('已存在同名模板，请使用其他名称')
+      return
+    }
+    
+    // 新建模板只能添加到自定义模板区
+    customTemplates.value.push(newTemplate)
+    saveCustomTemplatesToStorage()
+    ElMessage.success('模板创建成功')
+  } else {
+    // 编辑模式
+    const editIndex = templateDialog.value.editIndex
+    
+    if (editIndex >= 0 && editIndex < targetTemplates.length) {
+      // 检查是否与其他模板重名（排除自己）
+      const existsInDefault = defaultQueryTemplates.some((t, idx) => 
+        (isDefault && idx !== editIndex || !isDefault) && t.name === newTemplate.name
+      )
+      const existsInCustom = customTemplates.value.some((t, idx) => 
+        (!isDefault && idx !== editIndex || isDefault) && t.name === newTemplate.name
+      )
+      
+      if (existsInDefault || existsInCustom) {
+        ElMessage.warning('已存在同名模板，请使用其他名称')
+        return
+      }
+      
+      // 更新对应索引下的模板
+      if (isDefault) {
+        defaultQueryTemplates[editIndex] = { ...newTemplate, isDefault: true }
+        saveDefaultTemplatesToStorage()
+      } else {
+        customTemplates.value[editIndex] = newTemplate
+        saveCustomTemplatesToStorage()
+      }
+      
+      ElMessage.success('模板保存成功')
+    }
+  }
+  
+  // 关闭对话框
+  templateDialog.value.visible = false
+}
+
+// 删除模板
+const deleteTemplate = async (index, isDefault = false) => {
+  const targetTemplates = isDefault ? defaultQueryTemplates : customTemplates.value
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除模板"${targetTemplates[index].name}"吗？`,
+      '确认删除',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    if (isDefault) {
+      defaultQueryTemplates.splice(index, 1)
+      saveDefaultTemplatesToStorage()
+    } else {
+      customTemplates.value.splice(index, 1)
+      saveCustomTemplatesToStorage()
+    }
+    
+    ElMessage.success('模板删除成功')
+  } catch (error) {
+    // 用户取消删除
+    if (error !== 'cancel') {
+      console.error('删除模板失败:', error)
+    }
+  }
 }
 
 const executeQuery = async () => {
@@ -2563,12 +2887,33 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 
+.template-header .param-label {
+  margin-bottom: 0;
+}
+
+/* 空状态提示文字 */
+.empty-template-hint {
+  color: #999;
+  font-size: 13px;
+  text-align: center;
+  padding: 12px 0;
+  margin-top: -4px;
+}
+
+/* 添加模板按钮样式 */
+.add-template-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 6px;
+}
+
 .templates-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 12px;
 }
 
+/* 模板卡片的样式 */
 .template-card {
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid #e8ecf0;
@@ -2576,23 +2921,67 @@ onMounted(() => {
   padding: 16px;
   cursor: pointer;
   transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
+/* 模板卡片的悬停效果 */
 .template-card:hover {
   border-color: #667eea;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
 }
 
+/* 在悬停时显示操作按钮 */
+.template-card:hover .template-actions {
+  opacity: 1;
+}
+
+/* 内容显示区域 */
+.template-content {
+  flex: 1;
+  cursor: pointer;
+}
+
 .template-name {
   font-weight: 600;
   color: #2c3e50;
   margin-bottom: 6px;
+  padding-right: 60px; /* 为操作按钮留出空间 */
 }
 
 .template-description {
   font-size: 12px;
   color: #7f8c8d;
+}
+
+/* 模板操作按钮 */
+.template-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* 编辑和删除按钮样式 */
+.edit-template-btn,
+.delete-template-btn {
+  padding: 4px;
+  font-size: 16px;
+  color: #7f8c8d;
+  transition: color 0.2s ease;
+}
+
+.edit-template-btn:hover {
+  color: #667eea
+}
+
+.delete-template-btn:hover {
+  color: #e74c3c
 }
 
 .execute-actions {
