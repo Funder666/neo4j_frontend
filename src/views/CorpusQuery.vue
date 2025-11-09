@@ -33,7 +33,7 @@
               </el-form-item>
 
               <el-row :gutter="20">
-                <el-col :span="12">
+                <el-col :span="8">
                   <el-form-item label="查询类型">
                     <el-select v-model="queryConfig.type" placeholder="选择查询类型" size="large">
                       <el-option label="上下文检索" value="Context" />
@@ -41,7 +41,7 @@
                     </el-select>
                   </el-form-item>
                 </el-col>
-                <el-col :span="12">
+                <el-col :span="8">
                   <el-form-item label="返回数量">
                     <el-input-number
                       v-model="queryConfig.number"
@@ -50,6 +50,18 @@
                       size="large"
                       style="width: 100%"
                     />
+                  </el-form-item>
+                </el-col>
+                <el-col :span="8">
+                  <el-form-item label="目标语料">
+                    <el-select v-model="queryConfig.corpusType" placeholder="选择语料库" size="large">
+                      <el-option
+                        v-for="type in corpusTypes"
+                        :key="type.value"
+                        :label="type.label"
+                        :value="type.value"
+                      />
+                    </el-select>
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -108,7 +120,10 @@
           <!-- 频次结果 -->
           <div v-if="queryResult && queryResult.Type === 'Freq'" class="freq-results">
             <div class="results-header">
-              <h3>频次查询结果</h3>
+              <div>
+                <h3>频次查询结果</h3>
+                <div class="corpus-info">来自{{ getCorpusTypeLabel(queryConfig.corpusType) }}语料库</div>
+              </div>
               <el-tag type="success">{{ queryResult.total }} 条记录</el-tag>
             </div>
 
@@ -138,17 +153,37 @@
           <!-- 上下文结果 -->
           <div v-else-if="queryResult && queryResult.Type === 'Context'" class="context-results">
             <div class="results-header">
-              <h3>上下文查询结果</h3>
+              <div>
+                <h3>上下文查询结果</h3>
+                <div class="corpus-info">来自{{ getCorpusTypeLabel(queryConfig.corpusType) }}语料库</div>
+              </div>
               <el-tag type="success">{{ queryResult.total }} 条记录</el-tag>
             </div>
 
             <div class="context-list">
               <div v-for="(item, index) in queryResult.Context" :key="index" class="context-item">
                 <div class="context-header">
-                  <el-tag type="info" size="small">{{ item.Source }}</el-tag>
+                  <div class="context-meta">
+                    <el-tag type="info" size="small">{{ item.Source }}</el-tag>
+                    <el-tag v-if="item.Note" type="warning" size="small">{{ item.Note }}</el-tag>
+                  </div>
                   <span class="context-index">#{{ index + 1 }}</span>
                 </div>
                 <div class="context-content" v-html="highlightQuery(item.Context)"></div>
+                <div v-if="item.Project || item.Title" class="context-details">
+                  <div v-if="item.Project" class="detail-item">
+                    <span class="detail-label">项目:</span>
+                    <span class="detail-value">{{ item.Project }}</span>
+                  </div>
+                  <div v-if="item.Title" class="detail-item">
+                    <span class="detail-label">标题:</span>
+                    <span class="detail-value">{{ item.Title }}</span>
+                  </div>
+                  <div v-if="item.URL" class="detail-item">
+                    <span class="detail-label">链接:</span>
+                    <a :href="item.URL" target="_blank" class="detail-link">查看原文</a>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -171,12 +206,24 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Document, Search, Refresh } from '@element-plus/icons-vue'
 import AppLayout from '../components/AppLayout.vue'
 
+const route = useRoute()
+
 // 语料库API地址 - 根据实际部署情况修改
-const CORPUS_API_URL = 'https://corpus.chineseplus.net/api/v1/search/edu'
+const CORPUS_API_BASE_URL = 'https://corpus.chineseplus.net/corpus/api/v1/search'
+
+// 语料库类型配置
+const corpusTypes = [
+  { value: 0, label: '教材' },
+  { value: 1, label: '视频' },
+  { value: 2, label: '中介语' },
+  { value: 3, label: '口语' },
+  { value: 4, label: '书面语' }
+]
 
 // 响应式数据
 const searchQuery = ref('')
@@ -189,12 +236,23 @@ const queryResult = ref(null)
 const queryConfig = ref({
   type: 'Context', // 'Context' 或 'Freq'
   number: 100,     // 返回数量
-  winSize: 20      // 上下文窗口大小
+  winSize: 20,     // 上下文窗口大小
+  corpusType: 0    // 语料库类型：0-4
 })
 
 // 生命周期
 onMounted(() => {
   loadSearchHistory()
+
+  // 检查URL参数中是否有关键词
+  const keywordFromRoute = route.query.keyword
+  if (keywordFromRoute) {
+    searchQuery.value = keywordFromRoute
+    // 自动执行查询
+    setTimeout(() => {
+      handleSearch()
+    }, 500) // 延迟500ms确保组件完全加载
+  }
 })
 
 // 搜索处理
@@ -241,6 +299,8 @@ const handleSearch = async () => {
 
 // 构建查询字符串
 const buildQueryString = (keyword, config) => {
+  // 根据Python脚本示例，正确的格式应该是：
+  // "办法{}Context(100)" 或 "办法{}Freq(100)"
   let query = `${keyword}{}${config.type}(${config.number}`
 
   if (config.type === 'Context') {
@@ -248,30 +308,107 @@ const buildQueryString = (keyword, config) => {
   }
 
   query += ')'
+
+  console.log('构建查询字符串:', query)
   return query
 }
 
 // 调用语料库API
 const queryCorpus = async (query) => {
-  const response = await fetch(CORPUS_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json; charset=UTF-8',
-    },
-    body: JSON.stringify({ query })
+  // 构建完整的API URL，包含语料库类型
+  const apiUrl = `${CORPUS_API_BASE_URL}/${queryConfig.value.corpusType}/corpus`
+
+  console.log('调用语料库API:', {
+    url: apiUrl,
+    query: query,
+    requestBody: JSON.stringify({ query })
   })
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({ query })
+    })
+
+    console.log('API响应状态:', response.status, response.statusText)
+
+    if (!response.ok) {
+      // 尝试获取错误详情
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+      try {
+        const errorData = await response.text()
+        console.error('API错误响应:', errorData)
+        errorMessage += ` - ${errorData}`
+      } catch (e) {
+        console.error('无法读取错误响应:', e)
+      }
+      throw new Error(errorMessage)
+    }
+
+    const data = await response.json()
+    console.log('API响应数据:', data)
+
+    // 检查新的API响应格式
+    if (data.code === 200 && data.data && data.data.content) {
+      // 转换为兼容的格式
+      const transformedData = {
+        success: true,
+        data: {
+          Type: 'Context',
+          Context: data.data.content.map(item => ({
+            Context: item.context,
+            Source: item.source,
+            Note: item.note,
+            Project: item.project,
+            Title: item.title,
+            URL: item.url
+          })),
+          total: data.data.content.length
+        }
+      }
+      console.log('转换后的数据:', transformedData)
+      return transformedData
+    }
+
+    // 保持原有的错误处理逻辑
+    if (!data.success && data.message) {
+      throw new Error(data.message)
+    }
+
+    return data
+  } catch (error) {
+    console.error('语料库API调用失败:', error)
+
+    // 如果是500错误，优雅地处理为无结果
+    if (error.message.includes('HTTP 500')) {
+      console.log('检测到500错误，返回无结果')
+      return {
+        success: true,
+        data: {
+          Type: 'Context',
+          Context: [],
+          total: 0
+        }
+      }
+    }
+
+    // 如果是网络错误，提供更友好的提示
+    if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      throw new Error('网络连接失败，请检查网络连接或稍后重试')
+    }
+
+    throw error
   }
+}
 
-  const data = await response.json()
-
-  if (!data.success && data.message) {
-    throw new Error(data.message)
-  }
-
-  return data
+// 获取语料库类型标签
+const getCorpusTypeLabel = (corpusType) => {
+  const corpusTypeObj = corpusTypes.find(type => type.value === corpusType)
+  return corpusTypeObj ? corpusTypeObj.label : '未知'
 }
 
 // 高亮查询关键词
@@ -295,7 +432,8 @@ const resetForm = () => {
   queryConfig.value = {
     type: 'Context',
     number: 100,
-    winSize: 20
+    winSize: 20,
+    corpusType: 0
   }
   hasSearched.value = false
   queryResult.value = null
@@ -462,7 +600,13 @@ const clearHistory = () => {
   font-size: 20px;
   font-weight: 600;
   color: #1f2937;
-  margin: 0;
+  margin: 0 0 4px 0;
+}
+
+.corpus-info {
+  font-size: 14px;
+  color: #6b7280;
+  font-weight: 500;
 }
 
 /* 频次结果样式 */
@@ -570,6 +714,12 @@ const clearHistory = () => {
   margin-bottom: 12px;
 }
 
+.context-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 .context-index {
   font-size: 12px;
   color: #6b7280;
@@ -578,6 +728,7 @@ const clearHistory = () => {
 .context-content {
   line-height: 1.6;
   color: #1f2937;
+  margin-bottom: 12px;
 }
 
 .context-content :deep(mark) {
@@ -586,6 +737,49 @@ const clearHistory = () => {
   padding: 2px 4px;
   border-radius: 3px;
   font-weight: 600;
+}
+
+.context-details {
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.detail-label {
+  font-weight: 600;
+  color: #6b7280;
+  min-width: 50px;
+  flex-shrink: 0;
+}
+
+.detail-value {
+  color: #374151;
+  word-break: break-all;
+}
+
+.detail-link {
+  color: #3b82f6;
+  text-decoration: none;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.1);
+  transition: all 0.2s ease;
+}
+
+.detail-link:hover {
+  background: rgba(59, 130, 246, 0.2);
+  color: #2563eb;
+  text-decoration: underline;
 }
 
 /* 无结果 */

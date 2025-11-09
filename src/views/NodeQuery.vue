@@ -265,14 +265,23 @@
               <div class="node-operations">
                 <h5 class="operations-title">操作</h5>
                 <div class="panel-actions">
-                  <el-button 
-                    type="success" 
+                  <el-button
+                    type="success"
                     size="small"
                     class="action-btn"
                     @click="showNodeRelationships(selectedNode)"
                   >
                     <el-icon><Share /></el-icon>
                     查看关系
+                  </el-button>
+                  <el-button
+                    type="info"
+                    size="small"
+                    class="action-btn corpus-btn"
+                    @click="goToCorpusQuery(selectedNode)"
+                  >
+                    <el-icon><Document /></el-icon>
+                    语料库查询
                   </el-button>
                   <div v-if="canEditNode(selectedNode) || canDeleteNode(selectedNode)" class="admin-actions">
                     <el-button 
@@ -476,7 +485,8 @@ import {
   Warning,
   ArrowLeft,
   Picture,
-  CopyDocument
+  CopyDocument,
+  Document
 } from '@element-plus/icons-vue'
 import apiService from '../services/api'
 import authService from '../services/auth'
@@ -557,6 +567,24 @@ const nodeForm = ref(null)
 // 方法
 const goHome = () => {
   router.push('/dashboard')
+}
+
+// 跳转到语料库查询页面
+const goToCorpusQuery = (node) => {
+  // 获取节点名称，优先使用name属性，其次使用value属性
+  const nodeName = node.properties?.name || node.properties?.value || ''
+
+  if (nodeName.trim()) {
+    // 跳转到语料库查询页面，并携带节点名称参数
+    router.push({
+      path: '/corpus',
+      query: {
+        keyword: nodeName.trim()
+      }
+    })
+  } else {
+    ElMessage.warning('该节点没有可查询的名称信息')
+  }
 }
 
 // 模式切换处理
@@ -2861,6 +2889,18 @@ onMounted(() => {
 .panel-actions .action-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.corpus-btn {
+  background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+  border-color: #17a2b8;
+  color: white;
+}
+
+.corpus-btn:hover {
+  background: linear-gradient(135deg, #138496 0%, #117a8b 100%);
+  border-color: #138496;
+  color: white;
 }
 
 .admin-actions {
