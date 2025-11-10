@@ -575,13 +575,10 @@ const goToCorpusQuery = (node) => {
   const nodeName = node.properties?.name || node.properties?.value || ''
 
   if (nodeName.trim()) {
-    // 跳转到语料库查询页面，并携带节点名称参数
-    router.push({
-      path: '/corpus',
-      query: {
-        keyword: nodeName.trim()
-      }
-    })
+    // 在新标签页中打开语料库查询页面，并携带节点名称参数
+    const url = window.location.origin + '/corpus?keyword=' + encodeURIComponent(nodeName.trim())
+    console.log('Opening corpus query in new tab:', url) // 调试日志
+    window.open(url, '_blank', 'noopener,noreferrer')
   } else {
     ElMessage.warning('该节点没有可查询的名称信息')
   }
