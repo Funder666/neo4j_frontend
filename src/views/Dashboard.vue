@@ -365,14 +365,34 @@ const createExampleNetwork = () => {
     return characterNodes.find(item => item.nodeLabel === targetChar)
   }).filter(item => item) // 过滤掉找不到的字符
   
-  // 创建排序后的汉字节点
+  // 创建排序后的汉字节点 - 分为两行布局
   const sortedCharacterNodeList = sortedCharacterNodes.map((item, index) => {
     const { node, nodeLabel } = item
-    const position = {
-      x: (index - 4.5) * 1600, // 调整间距到1600px，保证节点在可视范围内
-      y: 0 // 保持水平居中
+
+    // 第一行：国际中文教 (index 0-5)
+    // 第二行：育知识图谱 (index 6-9)
+    let row, colInRow
+    if (index < 6) {
+      row = 1 // 第一行
+      colInRow = index // 0-5
+    } else {
+      row = 2 // 第二行
+      colInRow = index - 6 // 0-3
     }
-    
+
+    // 计算位置：两行布局，增大节点间距
+    // 第一行6个字，第二行4个字，居中对齐
+    let x
+    if (row === 1) {
+      // 第一行6个字的位置：-4500, -2700, -900, 900, 2700, 4500
+      x = (colInRow - 2.5) * 1800
+    } else {
+      // 第二行4个字的位置：-2700, -900, 900, 2700（与第一行居中对齐）
+      x = (colInRow - 1.5) * 1800
+    }
+
+    const y = row === 1 ? -600 : 600 // 第一行在上方，第二行在下方，增大行间距到1200px
+
     return {
       id: node.id,
       label: nodeLabel,
@@ -382,18 +402,18 @@ const createExampleNetwork = () => {
         background: getNodeColor((node.labels && node.labels[0]) || 'Default'),
         border: darkenColor(getNodeColor((node.labels && node.labels[0]) || 'Default'), 0.3)
       },
-      font: { 
-        color: '#2c3e50', 
-        size: 280, 
+      font: {
+        color: '#2c3e50',
+        size: 450,
         face: 'Arial, Microsoft YaHei, sans-serif',
-        strokeWidth: 15,
+        strokeWidth: 20,
         strokeColor: '#ffffff',
         bold: true
       },
       shape: 'circle',
-      size: 2000,
-      x: position.x,
-      y: position.y,
+      size: 2400, // 增大节点尺寸到2400
+      x: x,
+      y: y,
       fixed: true, // 完全固定位置
       physics: false, // 完全不参与物理计算
       data: node
@@ -437,7 +457,7 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 180, 
+        size: 120,
         face: 'Arial, Microsoft YaHei, sans-serif',
         strokeWidth: 12,
         strokeColor: '#ffffff',
@@ -464,7 +484,7 @@ const createExampleNetwork = () => {
     if (isSharedRadical) {
       // 共有部首节点特殊定位：放在右上方更远的外围，完全避开水平中心区域
       angle = 320; // 右上方更偏一些
-      radius = 3800; // 进一步大幅增加距离，确保在更远的外围
+      radius = 12000; // 进一步大幅增加距离，确保在更远的外围
     } else {
       // 其他部首节点正常分布
       if (totalRadical <= 1) {
@@ -489,7 +509,7 @@ const createExampleNetwork = () => {
       },
       font: { 
         color: '#2c3e50', 
-        size: 185, 
+        size: 120,
         face: 'Arial, Microsoft YaHei, sans-serif',
         strokeWidth: 12,
         strokeColor: '#ffffff',
@@ -691,10 +711,30 @@ const createExampleNetwork = () => {
       }
     })
     
-    // 强制设置汉字节点位置并固定
+    // 强制设置汉字节点位置并固定 - 按两行布局
     characterNodeIds.forEach((nodeId, index) => {
-      const x = (index - 4.5) * 1600
-      const y = 0
+      // 第一行：国际中文教 (index 0-5)
+      // 第二行：育知识图谱 (index 6-9)
+      let row, colInRow
+      if (index < 6) {
+        row = 1 // 第一行
+        colInRow = index // 0-5
+      } else {
+        row = 2 // 第二行
+        colInRow = index - 6 // 0-3
+      }
+
+      let x
+      if (row === 1) {
+        // 第一行6个字的位置：-4500, -2700, -900, 900, 2700, 4500
+        x = (colInRow - 2.5) * 1800
+      } else {
+        // 第二行4个字的位置：-2700, -900, 900, 2700（与第一行居中对齐）
+        x = (colInRow - 1.5) * 1800
+      }
+
+      const y = row === 1 ? -600 : 600 // 第一行在上方，第二行在下方
+
       exampleNetwork.value.moveNode(nodeId, x, y)
     })
     
